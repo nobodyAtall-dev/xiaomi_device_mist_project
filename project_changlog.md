@@ -346,3 +346,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5 — camera SELinux service attribute correction
 - Replaced undeclared vendor_service with protected_service, hal_service_type and service_manager_type, following upstream LineageOS public/service.te; associated service with hal_camera using hal_attribute_service as in private/hal_camera.te. Device commit f6308ff93d8f6386e995ea5df4af68e929def905. Direct repository edit; no workflow. Policy compilation and VINTF revalidation pending.
+
+### Phase 5 — duplicate camera service contexts correction
+- mist-policy-vintf-validation-v2.log: vendor policy CIL and policy binary compilation progressed beyond undeclared attribute error; vendor_service_contexts_test failed on duplicate camera provider vendor_qti/0 and conflicting postprocessing labels vendor_hal_postproc_service vs vendor_mist_camera_postproc_service. Removed local redundant camera service contexts, custom type and associated hal_attribute_service rule, retaining radio contexts and camera persist permissions. Device commit 63b483b2f0d3e31ca277983b738c418a08343a43. Existing merged upstream context labels observed in local compiler output; exact upstream source location not independently confirmed. Revalidation pending; no workflow, vendor or kernel changes.
