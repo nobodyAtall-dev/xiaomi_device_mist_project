@@ -67,3 +67,27 @@ if new:
     plist.write_text(old.rstrip()+'\n\n# Mist Phase 4C camera hardware closure\n'+'\n'.join(new)+'\n')
 save('phase4c-selection.json',{'added':new,'already_listed':sorted(selected&existing),'unresolved_source_or_blob':{k:sorted(v) for k,v in unresolved.items()},'note':'Candidate integration; full source build and runtime still required.'})
 print('Selected',len(new),'new assets;',len(unresolved),'unresolved SONAMEs to classify')
+
+# Source copy rules use the exact files verified in the upstream branch.
+mk=dev/'device.mk'
+text=mk.read_text()
+entries={name:'frameworks/av/media/libstagefright/data/'+name for name in sorted(source_names) if name.startswith('media_codecs_google_') and name!='media_codecs_google_c2_telephony.xml'}
+entries['media_codecs_vendor_audio.xml']='hardware/qcom-caf/sm8450-6.6/audio/primary-hal/configs/common/media_codecs_vendor_audio.xml'
+rules=[]
+for name,src in entries.items():
+    dest='$(TARGET_COPY_OUT_VENDOR)/etc/'+name
+    if dest not in text:rules.append('PRODUCT_COPY_FILES += '+src+':'+dest)
+if rules:mk.write_text(text.rstrip()+'\n\n# Phase 4C codec include closure\n'+'\n'.join(rules)+'\n')
+# Stock exact labels, missing from the checked Qualcomm common/parrot policies.
+fc=dev/'sepolicy/vendor/file_contexts'
+sc=dev/'sepolicy/vendor/service_contexts'
+for path, key, line in [
+    (fc,r'/vendor/bin/hw/vendor\.qti\.camera\.provider-service_64',r'/vendor/bin/hw/vendor\.qti\.camera\.provider-service_64 u:object_r:hal_camera_default_exec:s0'),
+    (sc,'android.hardware.camera.provider.ICameraProvider/vendor_qti/0','android.hardware.camera.provider.ICameraProvider/vendor_qti/0 u:object_r:hal_camera_service:s0')]:
+    content=path.read_text()
+    if key not in content:path.write_text(content.rstrip()+'\n\n# Mist stock AIDL camera provider\n'+line+'\n')
+# Review HAL declarations and init without wholesale importing stock RC or manifests.
+manifest=vendor/'proprietary/vendor/etc/vintf/manifest/vendor.qti.camera.provider.xml'
+rc=vendor/'proprietary/vendor/etc/init/vendor.qti.camera.provider-service_64.rc'
+assert 'ICameraProvider/vendor_qti/0' in manifest.read_text() and 'ICameraProvider/vendor_qti/0' in rc.read_text()
+save('phase4c-hal-init-review.json',{'camera_instance':'android.hardware.camera.provider.ICameraProvider/vendor_qti/0','manifest_and_rc_agree':True,'pending':['VINTF compatibility against assembled build','camera postproc and AON service provider verification','normal boot module readiness and charger triggers','SELinux enforcing build and runtime denials','battery metadata runtime validation']})
