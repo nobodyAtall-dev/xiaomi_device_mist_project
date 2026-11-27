@@ -1,4 +1,4 @@
-name: Mist Phase 4A - Stock hardware integration
+name: Mist Phase 4A - Stock hardware integration and update
 on:
   workflow_dispatch:
     inputs:
@@ -115,6 +115,30 @@ jobs:
           git -C android/device/xiaomi/mist diff --stat > reports/device-diff-stat.txt
           git -C android/vendor/xiaomi/mist status --short > reports/vendor-status.txt
           git -C android/vendor/xiaomi/mist diff --stat > reports/vendor-diff-stat.txt
+      - name: Publish validated incremental hardware changes
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          device=android/device/xiaomi/mist
+          vendor=android/vendor/xiaomi/mist
+          test "$(gh api repos/nobodyAtall-dev/android_vendor_xiaomi_mist --jq .private)" = true
+          for dir in "$device" "$vendor"; do
+            git -C "$dir" config user.name nobodyAtall-dev
+            git -C "$dir" config user.email hashynaa@gmail.com
+            test "$(git -C "$dir" rev-parse HEAD)" = "$(git -C "$dir" ls-remote origin refs/heads/lineage-24 | cut -f1)"
+            test -z "$(find "$dir" -path '*/.git' -prune -o -type f -size +104857599c -print -quit)"
+          done
+          git -C "$device" add proprietary-files.txt
+          git -C "$vendor" add Android.bp mist-vendor.mk BoardConfigVendor.mk Android.mk proprietary
+          for dir in "$vendor" "$device"; do
+            if ! git -C "$dir" diff --cached --quiet; then
+              git -C "$dir" commit -m "Integrate verified Mist stock hardware assets"
+              git -C "$dir" push origin HEAD:lineage-24
+            fi
+            printf '%s %s\n' "$dir" "$(git -C "$dir" rev-parse HEAD)" >> reports/hardware-publication.txt
+          done
       - name: Upload review only
         if: always()
         uses: actions/upload-artifact@v4
