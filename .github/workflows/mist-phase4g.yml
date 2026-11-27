@@ -1,0 +1,43 @@
+name: Mist Phase 4G - Static compatibility audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout current trees
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          mkdir -p audit/reports
+          test "$(gh api repos/nobodyAtall-dev/android_vendor_xiaomi_mist --jq .private)" = true
+          for entry in 'android_device_xiaomi_mist device' 'android_vendor_xiaomi_mist vendor'; do
+            read -r repo dest <<< "$entry"
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' clone --depth=1 -b lineage-24 "https://github.com/nobodyAtall-dev/$repo.git" "audit/$dest"
+            git -C "audit/$dest" rev-parse HEAD >> audit/reports/input-commits.txt
+          done
+      - name: Install audit tools
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install pyelftools==0.32
+          .venv/bin/python -m py_compile scripts/audit-mist-phase4g.py
+      - name: Audit current ELF and policy inventory
+        run: .venv/bin/python scripts/audit-mist-phase4g.py audit
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mist-phase4g-static-audit
+          path: audit/reports/
+          if-no-files-found: warn
+          retention-days: 30
