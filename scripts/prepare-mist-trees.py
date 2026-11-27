@@ -181,6 +181,7 @@ BOARD_AVB_VBMETA_SYSTEM := system system_ext product
 VENDOR_SECURITY_PATCH := 2026-05-05
 DEVICE_MATRIX_FILE := hardware/qcom-caf/common/compatibility_matrix_aidl.xml
 DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE += hardware/xiaomi/vintf/xiaomi_framework_compatibility_matrix.xml hardware/qcom-caf/common/vendor_framework_compatibility_matrix.xml
+BOARD_SHIPPING_API_LEVEL := 202404
 BOARD_VENDOR_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/vendor
 include device/qcom/sepolicy_vndr/SEPolicy.mk
 include vendor/xiaomi/mist/BoardConfigVendor.mk
@@ -243,12 +244,21 @@ for label,src in sets.items():
         q=dest/p.name
         if q.exists() and hashlib.sha256(q.read_bytes()).digest()!=hashlib.sha256(p.read_bytes()).digest():raise RuntimeError('Module name collision: '+label+'/'+p.name)
         copy(p,q)
-    for n in ('modules.load','modules.load.recovery','modules.blocklist','modules.options','modules.softdep','modules.dep'):
-        if (src/n).is_file():copy(src/n,dest/n)
+    for n in ('modules.load','modules.load.recovery','modules.blocklist','modules.options','modules.softdep'):
+        if not (src/n).is_file():continue
+        if n.startswith('modules.load'):
+            entries=[Path(x.split()[0]).name for x in (src/n).read_text().splitlines() if x.strip() and not x.lstrip().startswith('#')]
+            write(dest/n,'\n'.join(entries)+'\n')
+        else:copy(src/n,dest/n)
     assert (dest/'modules.load').is_file(),'Missing load list: '+label
     load=[Path(x.split()[0]).name for x in (dest/'modules.load').read_text().splitlines() if x.strip() and not x.lstrip().startswith('#')]
     missing_load=[x for x in load if not (dest/x).is_file()]
-    modreport[label]={'modules':len(list(dest.glob('*.ko'))),'missing_load_entries':missing_load,'vermagic':dict(collections.Counter(subprocess.run(['modinfo','-F','vermagic',p],capture_output=True,text=True).stdout.strip() for p in dest.glob('*.ko')))}
+    recovery_missing=[]
+    if (dest/'modules.load.recovery').is_file():
+        recovery_missing=[x for x in (dest/'modules.load.recovery').read_text().splitlines() if x and not (dest/x).is_file()]
+    modreport[label]={'modules':len(list(dest.glob('*.ko'))),'missing_load_entries':missing_load,'missing_recovery_load_entries':recovery_missing,'vermagic':dict(collections.Counter(subprocess.run(['modinfo','-F','vermagic',p],capture_output=True,text=True).stdout.strip() for p in dest.glob('*.ko')))}
 record('kernel-module-review.json',modreport)
+# Binary contents are kept in the temporary private staging directory only.
+record('kernel-file-hashes.json',{str(p.relative_to(kernel)):hashlib.sha256(p.read_bytes()).hexdigest() for p in kernel.rglob('*') if p.is_file()})
 record('stage-summary.json',{'firmware':'OS4.0.8.0.XPUMIXM','device_files':sum(p.is_file() for p in device.rglob('*')),'blob_candidates':len(candidates),'kernel_module_sets':modreport,'draft_only':True,'blocking_reviews':['HAL and VINTF integration','review Ravelin blob fixups and dependency closure','SELinux and device init review','verify prebuilt board flags and module ABI','AVB signing and MIUI partition coexistence','compile and boot validation']})
 print('Prepared isolated device and kernel candidates; vendor generation follows.')
