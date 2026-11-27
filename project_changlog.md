@@ -12,10 +12,10 @@ Last updated: 27 November 2026
 | 1B | Deep hardware analysis | Completed; limitations below |
 | 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
 | 3 | Device, vendor and standalone kernel bring-up | Initial candidates published; build integration pending |
-| 4 | ROM compilation and debugging | Build workflow prepared; integration and runtime checks pending |
+| 4 | ROM compilation and debugging | Local Linux build planned; integration and runtime checks pending |
 | 5 | Boot and hardware testing | Pending |
 
-**Current task:** Phase 4 build integration and configuration validation. Initial trees published; reference-based changes committed.
+**Current task:** Complete tree integration and validate by compiling LineageOS locally on Linux. GitHub Actions are for firmware research and tree maintenance, not ROM compilation.
 
 ## 2. Firmware
 
@@ -160,3 +160,6 @@ The project developer confirmed previous Mist kernel builds encountered MIHW iss
 - Kernel commit `adb7f5ea0f3b408f2baccbb69be56db4f65ea286` renames dtb/dtb.img to dtb/dtb.dtb with identical blob SHA, because Android build concatenates *.dtb. No kernel binaries modified. Vendor unchanged.
 - Added [local manifest](manifests/mist.xml) and [Phase 4 build workflow](.github/workflows/mist-phase4.yml), commits fc977fd2312f05d7d407203d61b0da59150b7701 and 3501186acad45c01c002ef24ac6696bafce25016. Uses upstream lineage-24.0, Mist lineage-24; self-hosted Linux default, minimum 400 GiB free and approximately 32 GiB RAM, selectable check/bootimages/bacon. Runtime untested; diagnostics only. Private source checkout uses GH_PAT. Restrict runner to trusted workflow execution.
 - Still outstanding: Mist-specific audio configs, fingerprint/camera/sensor details, VINTF manifests, init services, SELinux, ELF provider closure/fixups, stock bootconfig and AVB/partition layout. Do not flash. No additional repositories required. First configuration build is needed; no compile/boot success claimed.
+
+### Build environment correction
+The project developer confirmed LineageOS 24 will be synchronized and compiled locally on Linux. GitHub Actions remain for firmware research, extraction and tree maintenance only. The Phase 4 GitHub build workflow is not required and should not be dispatched. The local manifest remains useful. No source-tree changes in this correction.
