@@ -117,6 +117,26 @@ jobs:
               assert (root/p).stat().st_size
           assert not any((root/'proprietary').rglob('*.ko'))
           PY
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          names=["vendor/firmware/focaltech_ts_fw_sanxing.bin","vendor/firmware/focaltech_ts_fw_sanxing1.bin","vendor/firmware/focaltech_ts_fw_sanxing2.bin","vendor/firmware/focaltech_ts_fw_sanxing3.bin","vendor/firmware/focaltech_ts_fw_sanxing4.bin"]
+          root=Path('android/vendor/xiaomi/mist/proprietary')
+          lines=[]
+          for name in names:
+              src=Path('dump')/name
+              dst=root/name
+              assert src.is_file() and dst.is_file() and src.stat().st_size == 122624, name
+              assert src.read_bytes()==dst.read_bytes(), name
+              lines.append(hashlib.sha256(dst.read_bytes()).hexdigest()+'  '+name)
+          Path('reports/touch-firmware.sha256').write_text('\n'.join(lines)+'\n')
+          p=Path('android/device/xiaomi/mist/device.mk')
+          content=p.read_text()
+          marker='# Mist touchscreen firmware in recovery ramdisk'
+          if marker not in content:
+              content=content.rstrip()+'\n\n'+marker+'\n'+'\n'.join('PRODUCT_COPY_FILES += vendor/xiaomi/mist/proprietary/'+n+':recovery/root/lib/firmware/'+Path(n).name for n in names)+'\n'
+              p.write_text(content)
+          PY
           git -C android/device/xiaomi/mist diff --stat > reports/device-diff-stat.txt
           git -C android/vendor/xiaomi/mist status --short > reports/vendor-status.txt
           git -C android/vendor/xiaomi/mist diff --stat > reports/vendor-diff-stat.txt
@@ -135,7 +155,7 @@ jobs:
             test "$(git -C "$dir" rev-parse HEAD)" = "$(git -C "$dir" ls-remote origin refs/heads/lineage-24 | cut -f1)"
             test -z "$(find "$dir" -path '*/.git' -prune -o -type f -size +104857599c -print -quit)"
           done
-          git -C "$device" add proprietary-files.txt
+          git -C "$device" add proprietary-files.txt device.mk
           git -C "$vendor" add Android.bp mist-vendor.mk BoardConfigVendor.mk Android.mk proprietary
           for dir in "$vendor" "$device"; do
             if ! git -C "$dir" diff --cached --quiet; then

@@ -10,6 +10,11 @@ def paths(line):
 existing={p for l in old.splitlines() if l.strip() and not l.lstrip().startswith('#') for p in paths(l)}
 # Explicit hardware assets, not factory tests, stock framework replacements, or donor binaries.
 exact=[
+ 'vendor/firmware/focaltech_ts_fw_sanxing.bin',
+ 'vendor/firmware/focaltech_ts_fw_sanxing1.bin',
+ 'vendor/firmware/focaltech_ts_fw_sanxing2.bin',
+ 'vendor/firmware/focaltech_ts_fw_sanxing3.bin',
+ 'vendor/firmware/focaltech_ts_fw_sanxing4.bin',
  'vendor/bin/hw/android.hardware.biometrics.fingerprint-service.odm',
  'vendor/etc/init/fingerprint-odm.rc',
  'vendor/etc/vintf/manifest/fingerprint-odm.xml',
