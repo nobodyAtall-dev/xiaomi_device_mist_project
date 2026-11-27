@@ -1,0 +1,61 @@
+name: Mist Phase 5 - Camera AIDL fix
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare tools and checkout
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y patchelf binutils
+          mkdir -p work/reports
+          test "$(gh api repos/nobodyAtall-dev/android_vendor_xiaomi_mist --jq .private)" = true
+          for entry in 'android_device_xiaomi_mist device' 'android_vendor_xiaomi_mist vendor'; do
+            read -r repo dest <<< "$entry"
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' clone --depth=1 -b lineage-24 "https://github.com/nobodyAtall-dev/$repo.git" "work/$dest"
+            git -C "work/$dest" rev-parse HEAD >> work/reports/input-commits.txt
+          done
+      - name: Apply and validate targeted ELF changes
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/fix-mist-camera-aidl.py
+          python3 scripts/fix-mist-camera-aidl.py work
+          test "$(git -C work/device diff --name-only)" = extract-files.py
+          test "$(git -C work/vendor diff --name-only | sort)" = "$(printf '%s\n' Android.bp proprietary/vendor/lib64/libcamximageformatutils.so proprietary/vendor/lib64/vendor.qti.hardware.camera.postproc@1.0-service-impl.so | sort)"
+          git -C work/device diff --stat
+          git -C work/vendor diff --stat
+      - name: Publish verified changes
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          for dir in work/vendor work/device; do
+            test "$(git -C "$dir" rev-parse HEAD)" = "$(git -C "$dir" -c credential.helper= -c 'credential.helper=!gh auth git-credential' ls-remote origin refs/heads/lineage-24 | cut -f1)"
+            git -C "$dir" config user.name nobodyAtall-dev
+            git -C "$dir" config user.email nobodyAtall-dev@users.noreply.github.com
+            git -C "$dir" add -u
+            git -C "$dir" commit -m "mist: normalize camera AIDL dependency versions"
+          done
+          for dir in work/vendor work/device; do
+            git -C "$dir" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:lineage-24
+            git -C "$dir" rev-parse HEAD >> work/reports/publication.txt
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mist-camera-aidl-fix-report
+          path: work/reports/
+          if-no-files-found: warn
