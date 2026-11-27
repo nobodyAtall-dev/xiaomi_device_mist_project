@@ -99,8 +99,29 @@ jobs:
           set -euo pipefail
           cd "$MIST_WORK"
           mkdir -p reports stock/images
-          python "$GITHUB_WORKSPACE/scripts/discover-mist-ota.py"
-          grep -q '/mist_global-ota_full-OS4.0.8.0.XPUMIXM-user-17.0-3695aedf1f.zip
+          python - <<'PY'
+          import json, requests
+          from pathlib import Path
+          name='mist_global-ota_full-OS4.0.8.0.XPUMIXM-user-17.0-3695aedf1f.zip'
+          version='OS4.0.8.0.XPUMIXM'
+          report={'md5':'3695aedf1f96d96bbdac41bb247bc8bf','probes':[]}
+          out=Path('reports/firmware-source.json')
+          for host in ('bn.d.miui.com','bigota.d.miui.com','hugeota.d.miui.com','cdnorg.d.miui.com','ultimateota.d.miui.com'):
+              url=f'https://{host}/{version}/{name}'
+              try:
+                  with requests.get(url,headers={'Range':'bytes=0-15','Accept-Encoding':'identity'},stream=True,timeout=25) as r:
+                      ok=r.status_code in (200,206) and r.raw.read(4)==b'PK\x03\x04'
+                      report['probes'].append({'url':url,'status':r.status_code,'zip':ok})
+                  if ok:
+                      report['selected']=url
+                      Path('rom-url.txt').write_text(url)
+                      break
+              except requests.RequestException as e:
+                  report['probes'].append({'url':url,'error':str(e)})
+          out.write_text(json.dumps(report,indent=2))
+          if 'selected' not in report:
+              raise SystemExit('Pinned HyperOS 4 OTA unreachable')
+          PY
           aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.zip "$(cat rom-url.txt)"
           sha256sum stock.zip > reports/archive.sha256
           md5sum stock.zip > reports/archive.md5
@@ -118,51 +139,6 @@ jobs:
               for n in ('META-INF/com/android/metadata','payload_properties.txt'):
                   if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
               assert 'pre-device=mist' in Path('reports/metadata').read_text(), 'Wrong OTA device'
-          PY
-          # Retain payload images for boot/AVB analysis using Dumpyara debug mode.
-          python -m dumpyara stock.zip -o "$PWD/dump" -v -d 2>&1 | tee reports/extraction.log
-          if [ -d dump/temp_raw_images ]; then
-            for img in "$PWD"/dump/temp_raw_images/*.img; do
-              [ -f "$img" ] || continue
-              ln -s "$img" "stock/images/$(basename "$img")"
-            done
-          fi
-          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
-      - name: Extract partitions and inventory
-        if: matrix.firmware == 'hyperos3'
-        run: |
-          set -euxo pipefail
-          cd "$MIST_WORK"
-          find stock -type f -print0 | xargs -0 -r sha256sum > reports/stock-files.sha256
-          find stock -type f -print0 | xargs -0 -r file > reports/stock-file-types.txt
-          python -m dumpyara stock.tgz -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
-          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
-          find dump -type f \( -name '*.prop' -o -name 'fstab*' -o -name '*.rc' -o -name '*manifest*.xml' -o -name '*compatibility_matrix*.xml' -o -name 'modules.load*' \) -print0 | while IFS= read -r -d '' p; do
-            printf '\n===== %s =====\n' "$p"
-            cat "$p"
-          done > reports/configuration.txt
-          find dump -type f -name '*.ko' > reports/kernel-modules.txt
-          find dump -type f -name '*.so' > reports/shared-libraries.txt
-          find stock -type f \( -name '*.xml' -o -name '*.txt' \) -print0 | while IFS= read -r -d '' p; do
-            printf '\n===== %s =====\n' "$p"; cat "$p"
-          done > reports/flash-metadata.txt
- rom-url.txt || { echo "Discovery selected a different OTA; refusing baseline drift"; exit 1; }
-          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.zip "$(cat rom-url.txt)"
-          sha256sum stock.zip > reports/archive.sha256
-          md5sum stock.zip > reports/archive.md5
-          python - <<'PY'
-          import hashlib,json,zipfile
-          from pathlib import Path
-          p=Path('stock.zip')
-          expected=json.loads(Path('reports/firmware-source.json').read_text()).get('md5')
-          if expected:
-              with p.open('rb') as f: actual=hashlib.file_digest(f,'md5').hexdigest()
-              assert actual==expected, 'OTA MD5 mismatch'
-          with zipfile.ZipFile(p) as z:
-              assert 'payload.bin' in z.namelist(), 'No payload.bin'
-              Path('reports/archive-files.txt').write_text('\n'.join(z.namelist()))
-              for n in ('META-INF/com/android/metadata','payload_properties.txt'):
-                  if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
           PY
           # Retain payload images for boot/AVB analysis using Dumpyara debug mode.
           python -m dumpyara stock.zip -o "$PWD/dump" -v -d 2>&1 | tee reports/extraction.log
@@ -262,6 +238,32 @@ jobs:
           path: evidence
       - name: Compare exact stock baselines
         run: python3 scripts/compare-mist-phase4b.py evidence comparison
+      - name: Index matching upstream source providers
+        run: |
+          set -euo pipefail
+          mkdir -p comparison/source-providers "$RUNNER_TEMP/mist-source-index"
+          while read -r repo branch; do
+            name=${repo##*/}
+            dest="$RUNNER_TEMP/mist-source-index/$name"
+            out="comparison/source-providers/$name"
+            mkdir -p "$out"
+            if ! git clone --depth=1 --filter=blob:none --no-checkout -b "$branch" "https://github.com/$repo.git" "$dest" > "$out/clone.log" 2>&1; then
+              echo "$repo $branch unavailable" >> comparison/source-provider-diagnostics.txt
+              continue
+            fi
+            git -C "$dest" rev-parse HEAD > "$out/commit.txt"
+            git -C "$dest" ls-tree -r --name-only HEAD > "$out/paths.txt"
+            grep -Ei 'media_codecs|c2audio.*policy|wlan.*symlink|WCNSS|health|camera|vintf|manifest.*xml|compatibility_matrix' "$out/paths.txt" > "$out/relevant-paths.txt" || true
+          done <<'SOURCES'
+          LineageOS/android_frameworks_av lineage-24.0
+          LineageOS/android_hardware_qcom_audio-ar lineage-24.0-caf-sm8450-6.6
+          LineageOS/android_hardware_qcom-caf_common lineage-24.0
+          LineageOS/android_hardware_interfaces lineage-24.0
+          LineageOS/android_hardware_xiaomi lineage-24.0
+          LineageOS/android_system_core lineage-24.0
+          LineageOS/android_system_sepolicy lineage-24.0
+          xiaomi-ravelin/android_device_xiaomi_sm4450-common lineage-24.0
+          SOURCES
       - uses: actions/upload-artifact@v4
         with:
           name: mist-phase4b-comparison
