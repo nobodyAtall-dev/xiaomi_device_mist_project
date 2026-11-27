@@ -1,15 +1,7 @@
-name: Mist firmware and initial bring-up
+name: Mist Phase 1 - Stock firmware analysis
 on:
   workflow_dispatch:
     inputs:
-      rom_url:
-        description: Optional direct Xiaomi HyperOS 3 Global fastboot TGZ URL
-        required: false
-        type: string
-      publish:
-        description: Push draft trees to separate repositories (vendor must be private)
-        type: boolean
-        default: false
       runner:
         description: Runner label (self-hosted recommended with 150 GB free)
         default: ubuntu-24.04
@@ -41,36 +33,49 @@ jobs:
           mkdir -p "$RUNNER_TEMP/mist-work"
           df -h "$RUNNER_TEMP"
       - name: Discover and download stock firmware
-        env:
-          ROM_OVERRIDE: ${{ inputs.rom_url }}
         run: |
           set -euxo pipefail
           cd "$RUNNER_TEMP/mist-work"
           mkdir -p reports
           python - <<'PY'
-          import os,re,requests,html,json
-          from urllib.parse import urlparse
+          import re,requests,html,json,concurrent.futures
           from pathlib import Path
-          pattern=re.compile(r'mist_global_images_OS3\.(\d+)\.(\d+)\.(\d+)\.WPUMIXM_\d+\.\d+\.\d+_16\.0_global_[a-f0-9]+\.tgz')
-          def valid(url):
-              p=urlparse(url)
-              return p.scheme=='https' and p.hostname in {'bigota.d.miui.com','hugeota.d.miui.com','cdnorg.d.miui.com','ultimateota.d.miui.com','bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com','cdn-ota.azureedge.net'} and pattern.fullmatch(p.path.rsplit('/',1)[-1])
-          urls=set()
-          errors=[]
-          if os.environ.get('ROM_OVERRIDE'):
-              urls.add(os.environ['ROM_OVERRIDE'].strip())
-          else:
-              for page in ['https://xiaomihive.com/firmware/mist/','https://mirom.ezbox.idv.tw/en/phone/mist/','https://xiaomirom.com/en/download/redmi-note-17-5g-poco-m8-power-5g-mist-stable-OS3.0.304.0.WPUMIXM/']:
+          from urllib.parse import urlparse
+          pattern=re.compile(r'mist_global_images_(OS3\.\d+\.\d+\.\d+\.[A-Z]{3}MIXM)_\d{8}\.\d+\.\d+_16\.0_global_[a-f0-9]+\.tgz',re.I)
+          pages=['https://droidforge.net/xiaomi/redmi-note-17-5g-mist?lang=en','https://mifw.net/devices/mist','https://mifw.net/devices/mist?page=1','https://xiaomifirmwareupdater.com/archive/miui/mist/','https://mirom.ezbox.idv.tw/en/phone/mist/','https://upmiui.com/?page=40','https://xiaomihive.com/firmware/mist/']
+          known='mist_global_images_OS3.0.304.0.WPUMIXM_20260917.0000.00_16.0_global_c4450c4e16.tgz'
+          hosts=['bn.d.miui.com','bigota.d.miui.com','hugeota.d.miui.com','cdnorg.d.miui.com','ultimateota.d.miui.com']
+          def get(page):
+              try:
+                  r=requests.get(page,timeout=35,headers={'User-Agent':'Mozilla/5.0'});r.raise_for_status()
+                  return page,html.unescape(r.text).replace('\\/','/'),None
+              except Exception as e: return page,'',str(e)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool: results=list(pool.map(get,pages))
+          names={known}
+          for page,body,error in results:
+              names.update(m.group(0) for m in pattern.finditer(body))
+          def ver(n): return tuple(map(int,pattern.fullmatch(n).group(1)[3:].split('.')[:3]))
+          names=sorted(names,key=ver,reverse=True)
+          report={'sources':[{'page':p,'error':e,'matches':sorted(set(m.group(0) for m in pattern.finditer(b)))} for p,b,e in results],'candidates':names,'probes':[]}
+          out=Path('reports/firmware-source.json')
+          out.write_text(json.dumps(report,indent=2))
+          for name in names:
+              version=pattern.fullmatch(name).group(1)
+              for host in hosts:
+                  url=f'https://{host}/{version}/{name}'
                   try:
-                      r=requests.get(page,timeout=45,headers={'User-Agent':'Mozilla/5.0'}); r.raise_for_status()
-                      urls.update(re.findall(r'https://[^\s"\x27<>]+',html.unescape(r.text)))
-                  except Exception as e: errors.append(str(e))
-          candidates=[u for u in urls if valid(u)]
-          if not candidates: raise SystemExit('No verified matching URL found; provide rom_url. '+str(errors))
-          def version(u): return tuple(map(int,valid(u).groups()))
-          url=max(candidates,key=lambda u:(version(u),u))
-          Path('rom-url.txt').write_text(url)
-          Path('reports/firmware-source.json').write_text(json.dumps({'selected':url,'candidates':sorted(candidates),'source_errors':errors},indent=2))
+                      with requests.get(url,headers={'Range':'bytes=0-15','Accept-Encoding':'identity'},stream=True,timeout=20) as r:
+                          ok=r.status_code in (200,206) and r.raw.read(2)==b'\x1f\x8b'
+                          report['probes'].append({'url':url,'status':r.status_code,'gzip':ok})
+                      if ok:
+                          report['selected']=url
+                          out.write_text(json.dumps(report,indent=2))
+                          Path('rom-url.txt').write_text(url)
+                          print('Selected:',url)
+                          raise SystemExit(0)
+                  except requests.RequestException as e: report['probes'].append({'url':url,'error':str(e)})
+                  finally: out.write_text(json.dumps(report,indent=2))
+          raise SystemExit('No reachable matching fastboot package; see firmware-source.json')
           PY
           aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.tgz "$(cat rom-url.txt)"
           sha256sum stock.tgz > reports/archive.sha256
@@ -78,17 +83,13 @@ jobs:
           tar -tzf stock.tgz > reports/archive-files.txt
           mkdir stock
           tar -xzf stock.tgz -C stock --no-same-owner --no-same-permissions
-          rm stock.tgz
       - name: Extract partitions and inventory
         run: |
           set -euxo pipefail
           cd "$RUNNER_TEMP/mist-work"
           find stock -type f -print0 | xargs -0 -r sha256sum > reports/stock-files.sha256
           find stock -type f -print0 | xargs -0 -r file > reports/stock-file-types.txt
-          # Repackage only for the extractor; retain every original stock image.
-          tar -cf stock.tar -C stock .
-          python -m dumpyara stock.tar -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
-          rm stock.tar
+          python -m dumpyara stock.tgz -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
           find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
           find dump -type f \( -name '*.prop' -o -name 'fstab*' -o -name '*.rc' -o -name '*manifest*.xml' -o -name '*compatibility_matrix*.xml' -o -name 'modules.load*' \) -print0 | while IFS= read -r -d '' p; do
             printf '\n===== %s =====\n' "$p"
@@ -99,75 +100,6 @@ jobs:
           find stock -type f \( -name '*.xml' -o -name '*.txt' \) -print0 | while IFS= read -r -d '' p; do
             printf '\n===== %s =====\n' "$p"; cat "$p"
           done > reports/flash-metadata.txt
-      - name: Generate firmware-derived initial trees
-        run: |
-          set -euxo pipefail
-          cd "$RUNNER_TEMP/mist-work"
-          git clone --depth=1 -b lineage-23.2 https://github.com/sky-lineage/android_device_xiaomi_sky.git reference
-          git -C reference rev-parse HEAD > reports/reference-commit.txt
-          python - <<'PY'
-          from pathlib import Path
-          import re,shutil,hashlib
-          dump=Path('dump')
-          d=Path('device-tree'); v=Path('vendor-tree')
-          d.mkdir(); v.mkdir()
-          props={}
-          for p in dump.rglob('build.prop'):
-              for line in p.read_text(errors='replace').splitlines():
-                  if '=' in line and not line.startswith('#'):
-                      k,val=line.split('=',1); props[k]=val
-          def prop(*keys):
-              return next((props[k] for k in keys if props.get(k)), '')
-          platform=prop('ro.board.platform')
-          if not re.fullmatch(r'[a-zA-Z0-9_]+',platform): raise SystemExit('Cannot establish board platform')
-          if not any('mist' in val.lower() for k,val in props.items() if 'device' in k): raise SystemExit('Firmware identity not established')
-          Path('reports/properties.txt').write_text('\n'.join(f'{k}={val}' for k,val in sorted(props.items())))
-          def write(p,s): p.write_text(s+'\n')
-          write(d/'AndroidProducts.mk','PRODUCT_MAKEFILES := $(LOCAL_DIR)/lineage_mist.mk\nCOMMON_LUNCH_CHOICES := lineage_mist-userdebug')
-          write(d/'Android.bp','soong_namespace {}')
-          write(d/'board-info.txt','require board=mist')
-          write(d/'lineage_mist.mk','$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)\n$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)\n$(call inherit-product, vendor/lineage/config/common_full_phone.mk)\n$(call inherit-product, device/xiaomi/mist/device.mk)\nPRODUCT_NAME := lineage_mist\nPRODUCT_DEVICE := mist\nPRODUCT_BRAND := Redmi\nPRODUCT_MODEL := Redmi Note 17 5G\nPRODUCT_MANUFACTURER := Xiaomi')
-          board=['DEVICE_PATH := device/xiaomi/mist','TARGET_ARCH := arm64','TARGET_ARCH_VARIANT := armv8-a','TARGET_CPU_ABI := arm64-v8a','TARGET_CPU_VARIANT := generic','TARGET_BOARD_PLATFORM := '+platform,'TARGET_BOOTLOADER_BOARD_NAME := mist','TARGET_NO_BOOTLOADER := true','TARGET_BOARD_INFO_FILE := $(DEVICE_PATH)/board-info.txt','BOARD_USES_QCOM_HARDWARE := true']
-          sdk=prop('ro.product.first_api_level','ro.board.first_api_level')
-          device=['PRODUCT_SOONG_NAMESPACES += $(LOCAL_PATH)','$(call inherit-product, vendor/xiaomi/mist/mist-vendor.mk)']
-          if sdk.isdigit(): device.append('PRODUCT_SHIPPING_API_LEVEL := '+sdk)
-          write(d/'BoardConfig.mk','\n'.join(board))
-          write(d/'device.mk','\n'.join(device))
-          # Reference blob paths are candidates, not a claim of HAL compatibility.
-          partitions={'vendor','odm','system','system_ext','product','vendor_dlkm','system_dlkm','odm_dlkm'}
-          roots={}
-          for p in dump.rglob('*'):
-              if p.is_dir() and p.name in partitions and any((p/x).exists() for x in ('etc','lib','lib64','bin','build.prop','framework')):
-                  roots.setdefault(p.name,[]).append(p)
-          matches=[]; missing=[]; copies=[]
-          for line in Path('reference/proprietary-files.txt').read_text().splitlines():
-              line=line.strip()
-              if not line or line.startswith('#'): continue
-              entry=line.lstrip('-').split('|')[0].split(';')[0]
-              src=entry.split(':')[0]; dest=entry.split(':')[-1]
-              if not re.fullmatch(r'[A-Za-z0-9_./+@-]+',src) or not re.fullmatch(r'[A-Za-z0-9_./+@-]+',dest) or '..' in Path(src).parts or '..' in Path(dest).parts: continue
-              part,sep,rel=src.partition('/')
-              if part not in roots or not sep: missing.append(src); continue
-              # Do not install APK/JAR/ELF as raw PRODUCT_COPY_FILES; these require reviewed Soong modules.
-              candidates=[r/rel for r in roots[part] if (r/rel).is_file() and not (r/rel).is_symlink()]
-              if not candidates: missing.append(src); continue
-              p=candidates[0]
-              if not p.resolve().is_relative_to(dump.resolve()): continue
-              if dest in matches: continue
-              target=v/'proprietary'/dest
-              target.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(p,target)
-              matches.append(dest)
-              with p.open('rb') as f: magic=f.read(4)
-              if magic!=b'\x7fELF' and p.suffix not in {'.apk','.jar','.apex','.capex','.so'}:
-                  copies.append('PRODUCT_COPY_FILES += vendor/xiaomi/mist/proprietary/'+dest+':'+dest)
-          write(d/'proprietary-files.txt','\n'.join(sorted(matches)))
-          write(v/'mist-vendor.mk','\n'.join(sorted(copies)))
-          write(v/'Android.bp','soong_namespace {}')
-          write(v/'BoardConfigVendor.mk','# Reserved for reviewed vendor board configuration.')
-          write(Path('reports/missing-reference-blobs.txt'),'\n'.join(sorted(set(missing))))
-          write(Path('reports/bringup-status.txt'),f'Platform: {platform}\nMatched stock blobs: {len(matches)}\nMissing reference paths: {len(missing)}\nDraft only: kernel, AVB, partition sizes, VINTF, SELinux and ELF Soong modules require integration and validation.')
-          if not matches: raise SystemExit('No reference blob matches; inspect extractor layout')
-          PY
       - name: Upload firmware analysis (no raw firmware or proprietary blobs)
         if: always()
         uses: actions/upload-artifact@v4
@@ -175,36 +107,4 @@ jobs:
           name: mist-firmware-analysis
           path: ${{ runner.temp }}/mist-work/reports/
           if-no-files-found: warn
-          retention-days: 7
-      - name: Publish initial trees
-        if: ${{ inputs.publish }}
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          set -euxo pipefail
-          cd "$RUNNER_TEMP/mist-work"
-          test -n "$GH_TOKEN"
-          set +x
-          test "$(gh api repos/nobodyAtall-dev/android_vendor_xiaomi_mist --jq .private)" = true
-          gh api repos/nobodyAtall-dev/android_device_xiaomi_mist --silent
-          gh auth setup-git
-          set -x
-          git config --global user.name "nobodyAtall-dev"
-          git config --global user.email "hashynaa@gmail.com"
-          for kind in device vendor; do
-            repo="nobodyAtall-dev/android_${kind}_xiaomi_mist"
-            dir="$kind-tree"
-            if git ls-remote --exit-code --heads "https://github.com/$repo.git" lineage-24.0; then
-              echo "Refusing to overwrite existing lineage-24.0 in $repo"; exit 1
-            fi
-            if find "$dir" -type f -size +99M | grep -q .; then
-              echo "Large file requires Git LFS review"; exit 1
-            fi
-          done
-          for kind in vendor device; do
-            repo="nobodyAtall-dev/android_${kind}_xiaomi_mist"
-            git -C "$kind-tree" init -b lineage-24.0
-            git -C "$kind-tree" add .
-            git -C "$kind-tree" commit -m "mist: Initial firmware-derived bring-up"
-            git -C "$kind-tree" push "https://github.com/$repo.git" HEAD:refs/heads/lineage-24.0
-          done
+          retention-days: 30
