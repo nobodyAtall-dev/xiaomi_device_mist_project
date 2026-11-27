@@ -111,6 +111,24 @@ for n in sorted(seen):
     for needed in se[n]["needed"]:
         key = se[n]["bits"], needed
         camera_edges.append({"consumer": n, "needed": needed, "stock": sorted(sp[key]), "current": sorted(cp[key])})
+# Dynamic-load strings are hints, not proven runtime dependencies.
+dynamic_hints = {}
+so_pattern = re.compile(rb"[A-Za-z0-9_][A-Za-z0-9_.+-]{2,180}\.so(?:\.[0-9]+)*\x00")
+stock_by_name = collections.defaultdict(list)
+for n in stock:
+    stock_by_name[Path(n).name].append(n)
+for n in roots:
+    if not n.startswith(("vendor/", "odm/")) or stock[n].stat().st_size > 128*1024*1024:
+        continue
+    try:
+        names = {m[:-1].decode("ascii") for m in so_pattern.findall(stock[n].read_bytes())}
+        names -= set(se[n]["needed"])
+        hits = {x:sorted(stock_by_name[x]) for x in sorted(names) if stock_by_name[x]}
+        if hits:
+            dynamic_hints[n] = hits
+    except OSError as e:
+        errors.append({"file":n,"error":str(e)})
+save("camera-dynamic-library-hints.json", dynamic_hints)
 save("camera-closure.json", {"roots": roots, "closure": sorted(seen), "not_in_current_tree": sorted(seen-current.keys()), "edges": camera_edges,
     "stock_assets": sorted(n for n in stock if camera.search(n)), "note": "Candidate closure, not a recommendation to copy every blob; DT_NEEDED misses dlopen dependencies."})
 def vintf(files):
@@ -202,6 +220,26 @@ for n,p in sorted(stock.items()):
         if lines:
             config[n] = lines
 save("stock-permissions-properties.json", config)
+
+# Capture relevant stock text assets and the scripts used by init actions.
+# Never include proprietary ELF files or raw firmware images.
+text_assets = {}
+for n,p in sorted(stock.items()):
+    if p.is_symlink() or not p.is_file() or p.stat().st_size > 256*1024:
+        continue
+    is_config = ("/etc/" in n and pattern.search(n) and p.suffix.lower() in {".xml",".json",".ini",".conf",".cfg",".txt",".policy"})
+    is_script = n.startswith(("vendor/bin/","odm/bin/")) and n.endswith(".sh")
+    if not (is_config or is_script):
+        continue
+    try:
+        raw = p.read_bytes()
+        if b"\x00" in raw:
+            continue
+        text_assets[n] = raw.decode("utf-8",errors="replace")
+    except OSError as e:
+        errors.append({"file":n,"error":str(e)})
+save("stock-hardware-text-assets.json",text_assets)
+
 # Preserve current tree build definitions as evidence, not a generated product image.
 build = {}
 for root in (dev, vendor.parent):
