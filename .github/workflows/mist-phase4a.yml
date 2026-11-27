@@ -93,6 +93,9 @@ jobs:
           assert '3695aedf1f96d96bbdac41bb247bc8bf' in Path('reports/archive.md5').read_text()
           PY
           python "$GITHUB_WORKSPACE/scripts/extend-mist-hardware.py" "$PWD"
+          for path in vendor/bin/init.kernel.init_boot-memory.sh vendor/bin/init.kernel.post_boot-memory.sh vendor/bin/start_subsys.sh vendor/bin/init.kernel.post_boot.sh vendor/lib64/sensors.touch.detect.so; do
+            test -f "dump/$path" || { echo "Missing required stock asset: $path"; exit 1; }
+          done
           if [ -d dump/system/system ]; then
             for entry in dump/system/system/*; do
               dest="dump/system/$(basename "$entry")"
@@ -108,6 +111,8 @@ jobs:
           data=json.loads(Path('reports/hardware-additions.json').read_text())
           missing=[p for p in data['added'] if not (root/'proprietary'/p).is_file()]
           assert not missing, missing
+          required=['vendor/bin/init.kernel.init_boot-memory.sh','vendor/bin/init.kernel.post_boot-memory.sh','vendor/bin/start_subsys.sh','vendor/bin/init.kernel.post_boot.sh','vendor/lib64/sensors.touch.detect.so']
+          assert all((root/'proprietary'/p).is_file() for p in required), 'Missing boot or sensor dependency'
           for p in ['Android.bp','mist-vendor.mk','BoardConfigVendor.mk']:
               assert (root/p).stat().st_size
           assert not any((root/'proprietary').rglob('*.ko'))
