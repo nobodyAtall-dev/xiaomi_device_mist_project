@@ -37,6 +37,9 @@ jobs:
           work=$(mktemp -d "$RUNNER_TEMP/mist-phase4b-${{ matrix.firmware }}-XXXXXX")
           echo "MIST_WORK=$work" >> "$GITHUB_ENV"
           df -h "$RUNNER_TEMP"
+      - name: Validate audit Python syntax before downloads
+        run: |
+          python -m py_compile scripts/audit-mist-phase4b.py scripts/compare-mist-phase4b.py
       - name: Discover and download HyperOS 3 fastboot
         if: matrix.firmware == 'hyperos3'
         run: |
