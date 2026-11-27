@@ -1,0 +1,124 @@
+name: Mist Phase 4A - Stock hardware integration
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label
+        default: ubuntu-24.04
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install extraction tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd llvm patchelf
+          python3 -m venv "$RUNNER_TEMP/mist-venv"
+          "$RUNNER_TEMP/mist-venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4
+          echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/mist-work"
+          df -h "$RUNNER_TEMP"
+      - name: Discover and download HyperOS 4 full OTA
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p reports stock/images
+          python "$GITHUB_WORKSPACE/scripts/discover-mist-ota.py"
+          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.zip "$(cat rom-url.txt)"
+          sha256sum stock.zip > reports/archive.sha256
+          md5sum stock.zip > reports/archive.md5
+          python - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          p=Path('stock.zip')
+          expected=json.loads(Path('reports/firmware-source.json').read_text()).get('md5')
+          if expected:
+              with p.open('rb') as f: actual=hashlib.file_digest(f,'md5').hexdigest()
+              assert actual==expected, 'OTA MD5 mismatch'
+          with zipfile.ZipFile(p) as z:
+              assert 'payload.bin' in z.namelist(), 'No payload.bin'
+              Path('reports/archive-files.txt').write_text('\n'.join(z.namelist()))
+              for n in ('META-INF/com/android/metadata','payload_properties.txt'):
+                  if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
+          PY
+          # Retain payload images for boot/AVB analysis using Dumpyara debug mode.
+          python -m dumpyara stock.zip -o "$PWD/dump" -v -d 2>&1 | tee reports/extraction.log
+          if [ -d dump/temp_raw_images ]; then
+            for img in "$PWD"/dump/temp_raw_images/*.img; do
+              [ -f "$img" ] || continue
+              ln -s "$img" "stock/images/$(basename "$img")"
+            done
+          fi
+          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
+      - name: Checkout published trees for review
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p android/device/xiaomi android/vendor/xiaomi android/tools android/prebuilts/clang/host/linux-x86/llvm-binutils-stable
+          gh auth setup-git --hostname github.com
+          git clone --depth=1 -b lineage-24 https://github.com/nobodyAtall-dev/android_device_xiaomi_mist.git android/device/xiaomi/mist
+          git clone --depth=1 -b lineage-24 https://github.com/nobodyAtall-dev/android_vendor_xiaomi_mist.git android/vendor/xiaomi/mist
+          git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_tools_extract-utils.git android/tools/extract-utils
+          git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_prebuilts_extract-tools.git android/prebuilts/extract-tools
+          for binary in llvm-objdump llvm-strip; do
+            ln -s "$(command -v "$binary")" "android/prebuilts/clang/host/linux-x86/llvm-binutils-stable/$binary"
+          done
+          for p in android/device/xiaomi/mist android/vendor/xiaomi/mist android/tools/extract-utils android/prebuilts/extract-tools; do
+            printf '%s %s\n' "$p" "$(git -C "$p" rev-parse HEAD)"
+          done > reports/hardware-review-commits.txt
+      - name: Select stock hardware additions and regenerate vendor candidate
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          assert 'pre-device=mist' in Path('reports/metadata').read_text()
+          assert '3695aedf1f96d96bbdac41bb247bc8bf' in Path('reports/archive.md5').read_text()
+          PY
+          python "$GITHUB_WORKSPACE/scripts/extend-mist-hardware.py" "$PWD"
+          if [ -d dump/system/system ]; then
+            for entry in dump/system/system/*; do
+              dest="dump/system/$(basename "$entry")"
+              if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then ln -s "system/$(basename "$entry")" "$dest"; fi
+            done
+          fi
+          export PYTHONPATH="$PWD/android/tools/extract-utils"
+          python android/device/xiaomi/mist/extract-files.py "$PWD/dump" 2>&1 | tee reports/hardware-extract.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('android/vendor/xiaomi/mist')
+          data=json.loads(Path('reports/hardware-additions.json').read_text())
+          missing=[p for p in data['added'] if not (root/'proprietary'/p).is_file()]
+          assert not missing, missing
+          for p in ['Android.bp','mist-vendor.mk','BoardConfigVendor.mk']:
+              assert (root/p).stat().st_size
+          assert not any((root/'proprietary').rglob('*.ko'))
+          PY
+          git -C android/device/xiaomi/mist diff --stat > reports/device-diff-stat.txt
+          git -C android/vendor/xiaomi/mist status --short > reports/vendor-status.txt
+          git -C android/vendor/xiaomi/mist diff --stat > reports/vendor-diff-stat.txt
+      - name: Upload review only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mist-phase4a-hardware-review
+          path: ${{ runner.temp }}/mist-work/reports/
+          retention-days: 14
