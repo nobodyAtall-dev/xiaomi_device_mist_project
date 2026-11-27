@@ -11,7 +11,7 @@ Last updated: 27 November 2026
 | 1 | HyperOS 3 firmware extraction | Completed |
 | 1B | Deep hardware analysis | Completed; limitations below |
 | 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
-| 3 | Device, vendor and standalone kernel bring-up | Candidate generation passed; integration review pending |
+| 3 | Device, vendor and standalone kernel bring-up | Candidate generation and review passed; publication pending |
 | 4 | ROM compilation and debugging | Pending |
 | 5 | Boot and hardware testing | Pending |
 
@@ -141,3 +141,8 @@ The project developer confirmed previous Mist kernel builds encountered MIHW iss
 - Added [Phase 3B workflow](.github/workflows/mist-phase3b.yml), commit d074303e1f9cf7fb0960318fc459293c68883744, and [publication script](scripts/publish-mist-candidates.sh), commit da58a1dfd6c01ee8c2fe8bd37eaec5366e0d5cf7.
 - Workflow regenerates candidates from the same pinned firmware. Default publish=false; review artifact mist-phase3b-review contains diagnostics only. Explicit publish=true permits initial candidate pushes after checks, requires GH_PAT with access to all three empty repositories, private vendor and prebuilt repositories, and verifies lineage-24 default branches. No force pushes or replacement of existing branches. Pushes are independent; if interrupted, review destinations before retrying.
 - Integration reports are not a full Android build or a symbol CRC/VINTF/SELinux/AVB validation. No publication or runtime test performed yet. Next: run Phase 3B in review mode, evaluate findings, then authorize candidate publication and compile LineageOS 24.
+
+### Phase 3B result — 27 November 2026
+- [Successful review run](../../actions/runs/45925399629), [artifact](../../actions/runs/45925399629/artifacts/15166182803) (20 reports). Log summary: 188 unique dependency names requiring review, 116 VINTF XML files with zero parse errors, 320 stock init services, 662 kernel modules. Candidate file counts and sizes unchanged from Phase 3; separation passed.
+- Publication correctly skipped (publish=false). XML parsing does not establish VINTF compatibility; dependency providers, SELinux compilation, module symbol CRCs, AVB/partition layout and boot/hardware remain unvalidated. Internal artifact reports not independently reviewed in this update.
+- Next: publish initial development candidates using Phase 3B with publish=true, then review actual committed files and resolve integration gaps through build testing. No new repositories required; no source repositories modified by this run.
