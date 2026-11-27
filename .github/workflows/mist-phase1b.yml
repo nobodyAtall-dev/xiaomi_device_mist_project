@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip
+          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd
           python3 -m venv "$RUNNER_TEMP/mist-venv"
           "$RUNNER_TEMP/mist-venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4
           echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
@@ -115,7 +115,7 @@ jobs:
           git -C reference rev-parse HEAD > reports/reference-commit.txt
           git clone --depth=1 https://android.googlesource.com/platform/external/avb avb
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg
-          git clone --depth=1 https://github.com/torvalds/linux.git --filter=blob:none --sparse linux
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/torvalds/linux.git linux
           git -C linux sparse-checkout set scripts
           git -C avb rev-parse HEAD > reports/avb-tool-commit.txt
           git -C mkbootimg rev-parse HEAD > reports/boot-tool-commit.txt
