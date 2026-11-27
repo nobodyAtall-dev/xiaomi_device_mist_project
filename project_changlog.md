@@ -197,3 +197,7 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Boot and fingerprint dependency publication
 - Run 45935171332 passed extraction and publication, artifact 15170676119. Vendor commit a715273 contains eight new stock assets, regenerated build files and corrected kernel RC; 11 changed files. Device and kernel unchanged. No repeat extraction needed for these eight. Full upstream policy compilation, VINTF and ELF closure remain unverified.
+
+### First local Soong validation
+- The project developer confirmed source sync complete and lunch lineage_mist cp2a userdebug successful (Android 17, CP2A.260605.016). m nothing completed 295/296 bootstrap steps then failed on libmifpext_fod mixing sensors AIDL V2 and V3 via android.frameworks.sensorservice-V1-ndk. RAM warning was not the reported failure.
+- Vendor commit 20bf85ad9e73ebe16383070d813c8985c4df147b patches actual ELF64 little-endian DT_NEEDED string from android.hardware.sensors-V2-ndk.so to same-length V3, and updates matching Android.bp dependency atomically. Device commit 323860b2fd9f2757847eb0081ff8a1ca38d8727e persists replace_needed fixup. No extraction rerun required. Sync device/vendor and rerun m nothing. ABI/symbol compatibility and runtime remain untested; no claim of full build success.
