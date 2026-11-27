@@ -194,3 +194,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 ### Stock dependency correction
 - Run 45934257847 failed before publication: vendor/bin/init.kernel.init_boot-memory.sh absent. Downloaded artifact 15169393462 and inspected full extracted-files.txt. Both legacy memory scripts absent; start_subsys.sh, init.kernel.post_boot.sh, sensors.touch.detect.so and five fingerprint-related libraries confirmed present at exact paths. No vendor or kernel change in failed run.
 - Device commit ad6e795373f65e7fd9cfdf0770d2a7b2f09c8f71 removes nonexistent memory scripts from list and adds persistent RC fixup removing their service declarations/start commands; lists eight verified missing vendor assets, including fingerprint dependency providers. Workflow commit acd182110439d1dc12a4bcf0aa3017c347576b88 checks all eight before publication. New run required; full dependency closure and compilation remain unverified.
+
+### Boot and fingerprint dependency publication
+- Run 45935171332 passed extraction and publication, artifact 15170676119. Vendor commit a715273 contains eight new stock assets, regenerated build files and corrected kernel RC; 11 changed files. Device and kernel unchanged. No repeat extraction needed for these eight. Full upstream policy compilation, VINTF and ELF closure remain unverified.
