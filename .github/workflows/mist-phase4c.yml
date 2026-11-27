@@ -168,8 +168,10 @@ jobs:
             done
           fi
           export PYTHONPATH="$PWD/android/tools/extract-utils"
-          python android/device/xiaomi/mist/extract-files.py --no-cleanup --section "Mist Phase 4C camera hardware closure" "$PWD/dump" 2>&1 | tee reports/targeted-extract.log
-          python android/device/xiaomi/mist/setup-makefiles.py 2>&1 | tee reports/regenerate-makefiles.log
+          if python -c 'import json,sys; sys.exit(not json.load(open("reports/phase4c-selection.json"))["added"]) '; then
+            python android/device/xiaomi/mist/extract-files.py --no-cleanup --section "Mist Phase 4C camera hardware closure" "$PWD/dump" 2>&1 | tee reports/targeted-extract.log
+          fi
+          python android/device/xiaomi/mist/extract-files.py --regenerate_makefiles 2>&1 | tee reports/regenerate-makefiles.log
       - name: Validate additive changes and protected files
         run: |
           set -euo pipefail
