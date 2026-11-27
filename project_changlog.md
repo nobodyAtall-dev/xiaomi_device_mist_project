@@ -11,11 +11,11 @@ Last updated: 27 November 2026
 | 1 | HyperOS 3 firmware extraction | Completed |
 | 1B | Deep hardware analysis | Completed; limitations below |
 | 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
-| 3 | Device, vendor and standalone kernel bring-up | Candidate workflow created |
+| 3 | Device, vendor and standalone kernel bring-up | Candidate generation passed; integration review pending |
 | 4 | ROM compilation and debugging | Pending |
 | 5 | Boot and hardware testing | Pending |
 
-**Current task:** Run Phase 3 candidate generation and review the results. The prebuilt kernel repository is private and ready for candidate publication after validation.
+**Current task:** Review Phase 3 integration gaps before publication. All destination repositories are ready.
 
 ## 2. Firmware
 
@@ -126,4 +126,12 @@ The project developer identified MiCode's `mist-w-oss` release. Branch checks ac
 ### Kernel strategy decision — 27 November 2026
 The project developer confirmed previous Mist kernel builds encountered MIHW issues. MiCode `drivers/mihw` is a symlink to `../../../vendor/xiaomi/proprietary/mihw`; target sources were not located. `drivers/Kconfig` unconditionally sources `drivers/mihw/Kconfig`, `drivers/Makefile` references CONFIG_MIHW, and mist.bzl lists metis.ko, mi_schedule.ko and migt.ko. Ravelin removes the MIHW Kconfig/Makefile references; Mist boot compatibility remains untested. Third-party slakkystar/mihw only contains mi_sched on its default garnet branch, not a verified complete Mist replacement. Decision: use coherent HyperOS 4 prebuilt kernel/DTB/DTBO/modules for initial LineageOS 24 bring-up; defer source-kernel forks. Device, vendor and prebuilt repositories exist and are empty; prebuilt visibility was subsequently changed to private. No new repository is required now. All three output branches must be lineage-24. No workflow or source tree changes in this review.
 
-- Repository setup: The project developer confirmed the prebuilt repository was made private; GitHub metadata verified this. No further repositories required. Phase 3 validation remains pending.
+- Repository setup: The project developer confirmed the prebuilt repository was made private; GitHub metadata verified this. No further repositories required. Phase 3 candidate generation subsequently passed; integration validation remains pending.
+
+### Phase 3 result — 27 November 2026
+- [Successful run](../../actions/runs/45924118844), [review artifact](../../actions/runs/45924118844/artifacts/15166235908). All steps passed; archive contents reviewed.
+- Device: 36 files (65,063 bytes); vendor: 988 files (302,374,661 bytes), including 984 selected blob candidates; standalone kernel: 674 files (181,112,432 bytes). No files at or above 100 MiB and no unexpected kernel files in device/vendor.
+- Kernel modules: 96 system_dlkm, 269 vendor_dlkm, 297 vendor ramdisk. All load-list entries present. System modules match selected GKI vermagic; vendor/ramdisk show mixed 6.6.118 identifiers and seven vendor modules report 6.6.98. Preserve original stock sets and check module symbol CRCs/dependencies before claiming ABI compatibility.
+- Blob review: 1,607 missing reference-path entries across three donors, 1,899 additional reference candidates, 4,714 dependency edges requiring classification (includes standard Android libraries; not 4,714 missing blobs), zero destination conflicts. Vendor makefile generation passed; three SONAME fixups logged.
+- Modem FAT extraction still warns about truncated image; not needed for current tree generation, do not flash extracted modem. Remaining integration gaps: HAL/VINTF, dependency closure, blob fixups, SELinux/init, prebuilt flags, AVB and partition coexistence. No compilation or boot validation.
+- Next: integration review and explicit gated publication workflow; candidate files were temporary and must be regenerated. No source repositories published or modified.
