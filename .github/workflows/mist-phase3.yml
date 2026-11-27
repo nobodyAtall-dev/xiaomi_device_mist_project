@@ -1,0 +1,131 @@
+name: Mist Phase 3 - LineageOS 24 candidate trees
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label
+        default: ubuntu-24.04
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install extraction tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd llvm patchelf
+          python3 -m venv "$RUNNER_TEMP/mist-venv"
+          "$RUNNER_TEMP/mist-venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4
+          echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/mist-work"
+          df -h "$RUNNER_TEMP"
+      - name: Discover and download HyperOS 4 full OTA
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p reports stock/images
+          python "$GITHUB_WORKSPACE/scripts/discover-mist-ota.py"
+          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.zip "$(cat rom-url.txt)"
+          sha256sum stock.zip > reports/archive.sha256
+          md5sum stock.zip > reports/archive.md5
+          python - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          p=Path('stock.zip')
+          expected=json.loads(Path('reports/firmware-source.json').read_text()).get('md5')
+          if expected:
+              with p.open('rb') as f: actual=hashlib.file_digest(f,'md5').hexdigest()
+              assert actual==expected, 'OTA MD5 mismatch'
+          with zipfile.ZipFile(p) as z:
+              assert 'payload.bin' in z.namelist(), 'No payload.bin'
+              Path('reports/archive-files.txt').write_text('\n'.join(z.namelist()))
+              for n in ('META-INF/com/android/metadata','payload_properties.txt'):
+                  if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
+          PY
+          # Retain payload images for boot/AVB analysis using Dumpyara debug mode.
+          python -m dumpyara stock.zip -o "$PWD/dump" -v -d 2>&1 | tee reports/extraction.log
+          if [ -d dump/temp_raw_images ]; then
+            for img in "$PWD"/dump/temp_raw_images/*.img; do
+              [ -f "$img" ] || continue
+              ln -s "$img" "stock/images/$(basename "$img")"
+            done
+          fi
+          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
+      - name: Fetch reference trees and official extraction utilities
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p android/tools android/prebuilts/clang/host/linux-x86/llvm-binutils-stable android/prebuilts
+          git clone --depth=1 -b lineage-24.0 https://github.com/xiaomi-ravelin/android_device_xiaomi_sm4450-common.git ravelin
+          git clone --depth=1 -b lineage-23.2 https://github.com/sky-lineage/android_device_xiaomi_sky.git sky
+          git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_device_xiaomi_garnet.git garnet
+          git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_tools_extract-utils.git android/tools/extract-utils
+          git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_prebuilts_extract-tools.git android/prebuilts/extract-tools
+          for repo in ravelin sky garnet android/tools/extract-utils android/prebuilts/extract-tools; do
+            printf '%s %s\n' "$repo" "$(git -C "$repo" rev-parse HEAD)"
+          done > reports/phase3-reference-commits.txt
+          for binary in llvm-objdump llvm-strip; do
+            ln -s "$(command -v "$binary")" "android/prebuilts/clang/host/linux-x86/llvm-binutils-stable/$binary"
+          done
+      - name: Prepare device and standalone kernel candidates
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          python "$GITHUB_WORKSPACE/scripts/prepare-mist-trees.py" "$PWD" "$PWD/android"
+      - name: Generate proprietary vendor makefiles using Lineage extract-utils
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          # Make the nested system dump available under the standard extraction path.
+          if [ -d dump/system/system ]; then
+            for entry in dump/system/system/*; do
+              dest="dump/system/$(basename "$entry")"
+              if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then ln -s "system/$(basename "$entry")" "$dest"; fi
+            done
+          fi
+          export PYTHONPATH="$PWD/android/tools/extract-utils"
+          python android/device/xiaomi/mist/extract-files.py "$PWD/dump" 2>&1 | tee reports/phase3-extract-utils.log
+          test -s android/vendor/xiaomi/mist/Android.bp
+          test -s android/vendor/xiaomi/mist/mist-vendor.mk
+          test -s android/vendor/xiaomi/mist/BoardConfigVendor.mk
+      - name: Validate repository separation
+        if: always()
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p reports
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result={}
+          for path in ('device/xiaomi/mist','vendor/xiaomi/mist','kernel/xiaomi/mist-prebuilt'):
+              p=Path('android')/path
+              files=[x for x in p.rglob('*') if x.is_file() and not x.is_symlink()]
+              result[path]={'target_branch':'lineage-24','files':len(files),'bytes':sum(x.stat().st_size for x in files),'over_100MiB':[str(x.relative_to(p)) for x in files if x.stat().st_size>=100*1024*1024]}
+              if path.startswith(('device/','vendor/')):
+                  result[path]['unexpected_kernel_files']=[str(x.relative_to(p)) for x in files if x.suffix=='.ko' or x.name in ('Image','dtb.img','dtbo.img','boot.img','vendor_boot.img')]
+          Path('reports/repository-layout.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          assert not any(x.get('unexpected_kernel_files') for x in result.values()), 'Kernel repository separation violated'
+          PY
+      - name: Upload candidate review reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mist-phase3-review
+          path: ${{ runner.temp }}/mist-work/reports/
+          if-no-files-found: warn
+          retention-days: 30
