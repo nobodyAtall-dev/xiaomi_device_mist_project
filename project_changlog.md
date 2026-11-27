@@ -11,7 +11,7 @@ Last updated: 27 November 2026
 | 1 | HyperOS 3 firmware extraction | Completed |
 | 1B | Deep hardware analysis | Completed; limitations below |
 | 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
-| 3 | Device, vendor and standalone kernel bring-up | Candidate generation and review passed; publication pending |
+| 3 | Device, vendor and standalone kernel bring-up | Initial candidates published; build integration pending |
 | 4 | ROM compilation and debugging | Pending |
 | 5 | Boot and hardware testing | Pending |
 
@@ -146,3 +146,10 @@ The project developer confirmed previous Mist kernel builds encountered MIHW iss
 - [Successful review run](../../actions/runs/45925399629), [artifact](../../actions/runs/45925399629/artifacts/15166182803) (20 reports). Log summary: 188 unique dependency names requiring review, 116 VINTF XML files with zero parse errors, 320 stock init services, 662 kernel modules. Candidate file counts and sizes unchanged from Phase 3; separation passed.
 - Publication correctly skipped (publish=false). XML parsing does not establish VINTF compatibility; dependency providers, SELinux compilation, module symbol CRCs, AVB/partition layout and boot/hardware remain unvalidated. Internal artifact reports not independently reviewed in this update.
 - Next: publish initial development candidates using Phase 3B with publish=true, then review actual committed files and resolve integration gaps through build testing. No new repositories required; no source repositories modified by this run.
+
+### Initial tree publication — 27 November 2026
+- [Successful publication run](../../actions/runs/45926322741), [review artifact](../../actions/runs/45926322741/artifacts/15167180788). All steps passed with publish=true. Separate repositories verified via GitHub metadata and branch listing; each has only lineage-24, also the default branch.
+- Device (public): nobodyAtall-dev/android_device_xiaomi_mist, commit 84bfc7262d9084c2f0a8de70237030a0b9bdffcb.
+- Vendor (private): nobodyAtall-dev/android_vendor_xiaomi_mist, commit 1eda755fa7217ad4f146c4a36e8d79cdbb03c1e9.
+- Prebuilt kernel (private): nobodyAtall-dev/android_kernel_xiaomi_mist-prebuilt, commit 257be77478c517543fafc30af0cb9bce2139fbbc.
+- GH_PAT publication and branch verification succeeded. No main branches remain in source repositories. No additional repositories required. These are initial development candidates, not build- or boot-validated trees. Next: review committed build configuration, integrate actual HALs/SELinux/init, resolve dependency providers, verify prebuilt flags and AVB/partition layout, then run LineageOS 24 build checks. Do not rerun initial publication; subsequent changes should be incremental commits.
