@@ -352,3 +352,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5 — duplicate camera provider executable context
 - mist-policy-vintf-validation-v3.log: Soong regenerated after policy glob change, neverallow checks passed, vendor_file_contexts_test failed on duplicate camera provider executable regex. Removed only redundant local file_contexts entry, preserving existing file and all other labels. Device commit 6a4617e8b2fa723974296b8c9a888196c92618a2. Local policy and manifest revalidation pending; no workflow, vendor or kernel changes.
+
+### Phase 5 — SELinux validation PASSED
+- mist-policy-vintf-validation-v4.log: requested selinux_policy and vendor_manifest.xml targets completed successfully in 02:03; 97 executed steps. Vendor file/service/hwservice/property context tests and merged service/hwservice tests completed, precompiled policy installed, SELinux aggregate target passed. Previous neverallow checks passed in v3. Nonfatal merged Codec2 default2 duplicate specification and isolated_compute_allowed_property_type diagnostic messages recorded. No device policy changes needed on this result. Full assembled VINTF compatibility and proprietary ELF symbol checks remain unverified; target success does not establish runtime functionality. No workflow or recovery/kernel changes.
