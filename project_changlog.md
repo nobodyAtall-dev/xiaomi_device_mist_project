@@ -187,3 +187,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Bluetooth fixup publication
 - Run 45932750335 completed successfully; artifact 15170060569. Zero new stock paths; fingerprint and four Bluetooth/audio fixups logged. Vendor commit e697312 published (three changed files); device and kernel unchanged. No repeat extraction required for these changes. Full build, policy compilation, ELF symbol and VINTF validation remain untested.
+
+### Init, properties and fingerprint integration
+- Device commit 5b0a692beafb334cd9d599a5105f8db756f79b8f adds Mist init, recovery init and Ravelin GKI module loading script, with package definitions. Device commit 5de512fd916befb7d3d2364b17c5a6247be89a6b adds Qualcomm AIDs, selected platform properties and audio flags. Device commit bb07eff7a8eb0a21fe33976a82b142a5f117f406 adds fingerprint persistent calibration/socket policy and lists five additional stock boot/sensor files. Workflow commit e4b46cdf01f8dd57aee16ff49f840d6e33066220 requires these assets before publishing. Their actual presence in the firmware dump has not yet been confirmed; the workflow must verify them. No vendor/kernel changes in this batch. Full policy compilation, dependency closure and VINTF compatibility unverified. No ROM build or boot test.
