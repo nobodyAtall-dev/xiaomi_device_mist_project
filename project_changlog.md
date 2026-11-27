@@ -349,3 +349,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5 — duplicate camera service contexts correction
 - mist-policy-vintf-validation-v2.log: vendor policy CIL and policy binary compilation progressed beyond undeclared attribute error; vendor_service_contexts_test failed on duplicate camera provider vendor_qti/0 and conflicting postprocessing labels vendor_hal_postproc_service vs vendor_mist_camera_postproc_service. Removed local redundant camera service contexts, custom type and associated hal_attribute_service rule, retaining radio contexts and camera persist permissions. Device commit 63b483b2f0d3e31ca277983b738c418a08343a43. Existing merged upstream context labels observed in local compiler output; exact upstream source location not independently confirmed. Revalidation pending; no workflow, vendor or kernel changes.
+
+### Phase 5 — duplicate camera provider executable context
+- mist-policy-vintf-validation-v3.log: Soong regenerated after policy glob change, neverallow checks passed, vendor_file_contexts_test failed on duplicate camera provider executable regex. Removed only redundant local file_contexts entry, preserving existing file and all other labels. Device commit 6a4617e8b2fa723974296b8c9a888196c92618a2. Local policy and manifest revalidation pending; no workflow, vendor or kernel changes.
