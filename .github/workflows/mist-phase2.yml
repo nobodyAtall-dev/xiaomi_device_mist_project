@@ -116,7 +116,15 @@ jobs:
               for n in ('META-INF/com/android/metadata','payload_properties.txt'):
                   if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
           PY
-          python -m dumpyara stock.zip -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
+          # Retain payload images for boot/AVB analysis using Dumpyara debug mode.
+          python -m dumpyara stock.zip -o "$PWD/dump" -v -d 2>&1 | tee reports/extraction.log
+          if [ -d dump/temp_raw_images ]; then
+            for img in "$PWD"/dump/temp_raw_images/*.img; do
+              [ -f "$img" ] || continue
+              ln -s "$img" "stock/images/$(basename "$img")"
+            done
+          fi
+          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
       - name: Extract partitions and inventory
         if: matrix.firmware == 'hyperos3'
         run: |
