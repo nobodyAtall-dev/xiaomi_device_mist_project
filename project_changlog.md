@@ -11,11 +11,11 @@ Last updated: 27 November 2026
 | 1 | HyperOS 3 firmware extraction | Completed |
 | 1B | Deep hardware analysis | Completed; limitations below |
 | 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
-| 3 | Device and vendor tree bring-up | Pending |
+| 3 | Device, vendor and standalone kernel bring-up | Candidate workflow created |
 | 4 | ROM compilation and debugging | Pending |
 | 5 | Boot and hardware testing | Pending |
 
-**Current task:** Prepare LineageOS 24.0 bring-up using the verified HyperOS 4 OTA baseline. Phase 2 completed successfully.
+**Current task:** Run Phase 3 candidate generation and review the results. Create the separate private prebuilt kernel repository before publication.
 
 ## 2. Firmware
 
@@ -110,4 +110,12 @@ No compilation or boot success has been established.
 - Use developer-oriented wording (e.g. 'The project developer confirmed') for developer confirmations. Future sessions: read this file first; update status, findings, fixes, relevant links and next steps after each change or reviewed run. Keep entries concise, factual and chronological.
 
 ### Repository and branch decision — 27 November 2026
-The project developer confirmed the exact target branch name `lineage-24` for both Mist source trees (not `lineage-24.0`). Both destination repositories are currently empty: device public, vendor private; GitHub reports `main` as their default branch. Initialize directly on `lineage-24` during first authorized publication and verify it is the default branch. Do not create or retain an unnecessary `main` branch. Initial bring-up uses matching Mist HyperOS 4 prebuilt kernel/DTB/DTBO/modules, so no additional kernel repository is required yet. If building a source kernel later, evaluate the Ravelin SM4450 kernel, devicetrees and modules repositories before creating Mist-specific forks. Keep project automation here; no extra common tree for a single device.
+The project developer confirmed the exact target branch name `lineage-24` for both Mist source trees (not `lineage-24.0`). Both destination repositories are currently empty: device public, vendor private; GitHub reports `main` as their default branch. Initialize directly on `lineage-24` during first authorized publication and verify it is the default branch. Do not create or retain an unnecessary `main` branch. Initial bring-up uses matching Mist HyperOS 4 prebuilt kernel/DTB/DTBO/modules in a separate private repository. Do not place kernel binaries or modules in the device/vendor repositories. If building a source kernel later, evaluate the Ravelin SM4450 kernel, devicetrees and modules repositories before creating Mist-specific forks. Keep project automation here; no extra common tree for a single device.
+
+### Phase 3 — 27 November 2026
+- The project developer confirmed that additional repositories must remain separate; do not merge kernel or other independent components into device/vendor trees.
+- Ravelin common proprietary list explicitly references Mist OS3.0.306.0.WPUINXM. Its kernel DT repository contains Mist-specific base, overlays, camera, audio, display, fingerprint, charger and 4 GB variant sources. Source build support remains untested.
+- New required repository: `android_kernel_xiaomi_mist-prebuilt` (private, empty, branch `lineage-24` on first publication; checkout path `kernel/xiaomi/mist-prebuilt`). Device and vendor retain their separate repositories. No source kernel forks required initially.
+- Added [candidate workflow](.github/workflows/mist-phase3.yml) ([commit](../../commit/560b71a3b9fb280800323320058b3a52b2b382c7)) and [generator](scripts/prepare-mist-trees.py) ([commit](../../commit/8ed1d8e6945f31a760d7e0acec8e38671aa59ca3)). [Module load normalization and hashes](../../commit/cba071325a196254dee67acb3354ed33f0f5d017).
+- Uses the exact reviewed HyperOS 4 OTA identity and MD5, selects Ravelin-derived blob candidates from Mist, reports Sky/Garnet alternatives and missing ELF dependencies, generates initial device configuration and vendor makefiles through Lineage extract-utils, stages boot kernel/DTB/DTBO/modules separately. System modules selected from matching GKI build directory.
+- Workflow is NOT runtime-tested. Only diagnostic reports are uploaded to the public automation repo; generated tree files remain on temporary runner storage. Publication is intentionally disabled until review; source repos unchanged. No compile/boot claim. The draft still needs HAL/VINTF, blob fixups and dependency closure, SELinux/init, prebuilt build flags, AVB, dynamic partition coexistence and ABI validation. Next: review `mist-phase3-review` artifact, resolve blockers and prepare explicit separate publication workflow.
