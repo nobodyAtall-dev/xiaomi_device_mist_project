@@ -5,5 +5,25 @@
   <project name="nobodyAtall-dev/android_vendor_xiaomi_mist" path="vendor/xiaomi/mist" remote="mist-github" revision="lineage-24" />
   <project name="nobodyAtall-dev/android_kernel_xiaomi_mist-prebuilt" path="kernel/xiaomi/mist-prebuilt" remote="mist-github" revision="lineage-24" />
   <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="mist-github" revision="lineage-24.0" />
-  <project name="nobodyAtall-dev/vendor_qcom_opensource_audio-kernel" path="hardware/qcom-caf/sm8450-6.6/audio/mist-kernel-uapi" remote="mist-github" revision="lineage-24" />
+  <!-- Retain upstream common and its other linkfiles; replace only the Mist CAF namespace link. -->
+  <remove-project name="LineageOS/android_hardware_qcom-caf_common" path="hardware/qcom-caf/common" />
+  <project path="hardware/qcom-caf/common" name="LineageOS/android_hardware_qcom-caf_common" groups="qcom" >
+    <!-- add guard for AOSP hardware/qcom dir -->
+    <linkfile src="os_pickup_aosp.mk" dest="hardware/qcom/Android.mk" />
+    <!-- add guards for CAF repositories -->
+    <linkfile src="os_pickup_sepolicy_vndr.mk" dest="device/qcom/sepolicy_vndr/SEPolicy.mk" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/msm8953/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sdm660/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8150/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8250/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8350/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8450/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8550/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8650/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8750/Android.bp" />
+    <linkfile src="os_pickup_qssi.bp" dest="hardware/qcom-caf/sm8850/Android.bp" />
+  </project>
+  <project name="nobodyAtall-dev/vendor_qcom_opensource_audio-kernel" path="hardware/qcom-caf/sm8450-6.6/audio/mist-kernel-uapi" remote="mist-github" revision="lineage-24">
+    <linkfile src="tools/mist-caf-namespace.bp" dest="hardware/qcom-caf/sm8450-6.6/Android.bp" />
+  </project>
 </manifest>
