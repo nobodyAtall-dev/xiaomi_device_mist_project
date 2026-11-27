@@ -26,4 +26,5 @@
   <project name="nobodyAtall-dev/vendor_qcom_opensource_audio-kernel" path="hardware/qcom-caf/sm8450-6.6/audio/mist-kernel-uapi" remote="mist-github" revision="lineage-24">
     <linkfile src="tools/mist-caf-namespace.bp" dest="hardware/qcom-caf/sm8450-6.6/Android.bp" />
   </project>
+  <project name="nobodyAtall-dev/vendor_opensource_display-drivers" path="hardware/qcom-caf/sm8450-6.6/display/mist-kernel-uapi" remote="mist-github" revision="lineage-24" />
 </manifest>
