@@ -10,12 +10,12 @@ Last updated: 27 November 2026
 | --- | --- | --- |
 | 1 | HyperOS 3 firmware extraction | Completed |
 | 1B | Deep hardware analysis | Completed; limitations below |
-| 2 | Reference research and dual-firmware comparison | In progress |
+| 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
 | 3 | Device and vendor tree bring-up | Pending |
 | 4 | ROM compilation and debugging | Pending |
 | 5 | Boot and hardware testing | Pending |
 
-**Current task:** Phase 2 workflow is running, as reported by the user. Review its results before creating the trees.
+**Current task:** Prepare LineageOS 24.0 bring-up using the verified HyperOS 4 OTA baseline. Phase 2 completed successfully.
 
 ## 2. Firmware
 
@@ -43,9 +43,27 @@ Published MD5: `3695aedf1f96d96bbdac41bb247bc8bf`
 | Super size | 10,200,547,328 bytes |
 | Dynamic group size | 10,190,061,568 bytes |
 
-These values were recorded in previous analysis; verify them against the original artifacts before using them in build configuration. HyperOS 4 values are pending.
+These values were recorded in previous analysis; verify them against the original artifacts before using them in build configuration. HyperOS 4 values are summarized below.
 
 Phase 1B logged 131 physical partition metadata rows, 33 DT candidates, 5,312 ELF files, 757 module entries, 1,193 hardware configurations, 977 matching Sky blob paths and 495 missing paths. Path matches do not establish binary compatibility.
+
+### Phase 2 findings (verified from artifacts)
+
+| Item | HyperOS 4 |
+| --- | --- |
+| OTA identity | mist, Android 17, SDK 37; published MD5 matches |
+| System security patch | 2026-10-01 |
+| Vendor SDK / security patch | 35 (Android 15) / 2026-05-05 |
+| Kernel | 6.6.118-android15-8-gc4127a25dcf3-ab15863337-4k |
+| Boot / vendor boot headers | v4 / v4; 4096-byte page size |
+| Boot / init_boot / vendor_boot / recovery image sizes | 100663296 / 8388608 / 100663296 / 104857600 bytes |
+| DTBO image size | 25165824 bytes |
+| New OTA image | mi_product.img (348160 bytes; not decoded) |
+| Modem | FAT retry succeeded; extracted file list available |
+
+Compared with HyperOS 3: 1603 added and 806 removed stock paths; 483 added and 328 removed ELF paths; 389 shared ELF metadata changes; 53 added and 36 removed config paths. Sky matches decreased from 977 to 973. These are path/metadata comparisons, not binary hashes or ABI guarantees.
+
+HyperOS 4 diagnostics: super metadata absent (expected for individual payload images), init_boot/recovery kernel version/config unavailable, qupfw ELF read error. Module vermagic includes multiple versions, including two distinct GKI build identifiers; verify per-partition ABI before selecting modules. Rescue remains unresolved in HyperOS 3. Prefer the matched HyperOS 4 boot, DTB/DTBO and module set; do not combine with Sky binaries.
 
 ## 4. Reference trees
 
@@ -67,14 +85,14 @@ Ravelin kernel references: [kernel](https://github.com/xiaomi-ravelin/android_ke
 | [Second failed run](../../actions/runs/45917251860) | Version parsing error; fixed in [a8220e5](../../commit/a8220e510ae4d6be70c1cef3d62567d552c7b8d8) |
 | [Phase 1 run](../../actions/runs/45917382922) | Passed; 7.5 GiB, 16 connections, peak 251 MiB/s; [13 reports](../../actions/runs/45917382922/artifacts/15162409622) |
 | [Phase 1B run](../../actions/runs/45918710446) | Passed with six diagnostics; [1,283 reports](../../actions/runs/45918710446/artifacts/15164370694) |
-| Phase 2 | [Workflow](.github/workflows/mist-phase2.yml), [OTA discovery](scripts/discover-mist-ota.py), [comparison](scripts/compare-mist-firmware.py); runtime results pending |
+| Phase 2 | [Workflow](.github/workflows/mist-phase2.yml), [OTA discovery](scripts/discover-mist-ota.py), [comparison](scripts/compare-mist-firmware.py); [Passed run](../../actions/runs/45922255689); [HyperOS 3](../../actions/runs/45922255689/artifacts/15164584468), [HyperOS 4](../../actions/runs/45922255689/artifacts/15164732386), [comparison](../../actions/runs/45922255689/artifacts/15165082696) |
 | 27 November 2026 | Simplified this changelog; no workflow or source tree changes |
 
 Phase 2 outputs: `mist-deep-analysis-hyperos3`, `mist-deep-analysis-hyperos4`, `mist-dual-comparison`. Separate runners limit disk usage. Artifacts expire after 30 days.
 
 ## 6. Open issues and next steps
 
-- [ ] Review Phase 2 results and verify full OTA identity and payload extraction, including raw image retention.
+- [x] Review Phase 2 results, verify OTA identity/checksum and confirm boot image retention.
 - [ ] Review rescue extraction failure, modem extraction completeness, duplicate A/B names and kernel extraction diagnostics. Node 20 deprecation warning is nonblocking.
 - [ ] Compare HyperOS 4 HALs, VINTF, ELF dependencies, kernel ABI, AVB and partition layout. Broader reference comparisons and binary content hashes remain to implement. OTA may omit physical partition metadata.
 - [ ] Choose a coherent Mist kernel strategy (stock prebuilt or verified source) and matching DTB/DTBO/modules.
@@ -89,4 +107,4 @@ No compilation or boot success has been established.
 - Automatic firmware discovery and downloads: `aria2c -x16 -s16 -k1M`.
 - Git identity: `nobodyAtall-dev` / `hashynaa@gmail.com`. Use existing `GH_PAT` secret for authorized publishing; never expose it.
 - No flashing, publishing during research, or overwriting existing trees without approval.
-- Future chats: read this file first; update status, findings, fixes, relevant links and next steps after each change or reviewed run. Keep entries concise, factual and chronological.
+- Use developer-oriented wording (e.g. 'The project developer confirmed') for developer confirmations. Future sessions: read this file first; update status, findings, fixes, relevant links and next steps after each change or reviewed run. Keep entries concise, factual and chronological.
