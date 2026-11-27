@@ -340,3 +340,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5 — camera allocator batch publication
 - Run 46016263435 / job 140564069704 passed all steps. Both direct conflict roots patched and published: device 596463f, vendor 00cd093. Post-publication Android.bp scan: no direct mixed NDK AIDL version groups, no allocator V1 or camera common V2 references. Artifact 15206412179. Local Soong and runtime ABI validation pending. User requests direct repository edits for future fixes rather than new repair workflows. Recovery/kernel unchanged.
+
+### Phase 5 — local Soong validation PASSED
+- mist-soong-validation-v5.log: Android 17 CP2A.260605.016 lineage_mist-userdebug; Soong Ninja generation succeeded in 13m33s, Make module and packaging rules completed, final nothing target succeeded. Total 14m57s. Memory stall and prebuilt kernel deprecation warnings non-fatal. Build graph validation passed; SELinux compilation, VINTF, ELF symbol checks and full ROM compilation/runtime remain unverified. Preserve recovery and kernel. Next targeted policy and manifest checks before full ROM build.
