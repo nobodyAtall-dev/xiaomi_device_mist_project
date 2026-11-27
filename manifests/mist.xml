@@ -5,4 +5,5 @@
   <project name="nobodyAtall-dev/android_vendor_xiaomi_mist" path="vendor/xiaomi/mist" remote="mist-github" revision="lineage-24" />
   <project name="nobodyAtall-dev/android_kernel_xiaomi_mist-prebuilt" path="kernel/xiaomi/mist-prebuilt" remote="mist-github" revision="lineage-24" />
   <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="mist-github" revision="lineage-24.0" />
+  <project name="nobodyAtall-dev/vendor_qcom_opensource_audio-kernel" path="hardware/qcom-caf/sm8450-6.6/audio/mist-kernel-uapi" remote="mist-github" revision="lineage-24" />
 </manifest>
