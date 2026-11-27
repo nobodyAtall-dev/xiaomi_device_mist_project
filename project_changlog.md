@@ -343,3 +343,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5 — local Soong validation PASSED
 - mist-soong-validation-v5.log: Android 17 CP2A.260605.016 lineage_mist-userdebug; Soong Ninja generation succeeded in 13m33s, Make module and packaging rules completed, final nothing target succeeded. Total 14m57s. Memory stall and prebuilt kernel deprecation warnings non-fatal. Build graph validation passed; SELinux compilation, VINTF, ELF symbol checks and full ROM compilation/runtime remain unverified. Preserve recovery and kernel. Next targeted policy and manifest checks before full ROM build.
+
+### Phase 5 — camera SELinux service attribute correction
+- Replaced undeclared vendor_service with protected_service, hal_service_type and service_manager_type, following upstream LineageOS public/service.te; associated service with hal_camera using hal_attribute_service as in private/hal_camera.te. Device commit f6308ff93d8f6386e995ea5df4af68e929def905. Direct repository edit; no workflow. Policy compilation and VINTF revalidation pending.
