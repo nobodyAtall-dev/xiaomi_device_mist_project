@@ -246,3 +246,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Additional recovery runtime defects
 - The project developer confirmed approximately four seconds of black screen during recovery entry, then normal display, and Power off in recovery reboots into HyperOS instead of remaining off. V2 log shows display panel bound at ~0.973s kernel uptime and recovery brightness set to 2047 (50%) at ~2.011s; no shutdown event captured. Need capture shutdown path and persistent kernel logs, retest with V3 ADSP/battery initialization before altering power-off or display configuration. Full ROM deferred.
+
+### Recovery power-off trace
+- Shutdown trace at 21.927s confirms recovery clears BCB and requests sys.powerctl=shutdown,userrequested,recovery; init enters shutdown mode, hands off to kernel, storage caches synchronize, FocalTech shutdown completes at 21.962s. ADB trace terminates before final kernel power-off, so actual reset/poweroff reason remains unknown. Battery devices still absent in this trace. Retest V3 with USB disconnected to distinguish charger-triggered restart from hardware shutdown defect, and collect previous-boot pstore and boot reason if HyperOS restarts. No speculative shutdown changes. Full ROM deferred.
