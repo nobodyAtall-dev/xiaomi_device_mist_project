@@ -1,0 +1,178 @@
+name: Mist Phase 2 - Dual firmware comparison
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label (self-hosted recommended with 150 GB free)
+        default: ubuntu-24.04
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  analyze:
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [hyperos3, hyperos4]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install extraction tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd
+          python3 -m venv "$RUNNER_TEMP/mist-venv"
+          "$RUNNER_TEMP/mist-venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4
+          echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/mist-work"
+          df -h "$RUNNER_TEMP"
+      - name: Discover and download HyperOS 3 fastboot
+        if: matrix.firmware == 'hyperos3'
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p reports
+          echo 'Firmware discovery started' > reports/discovery-status.txt
+          python - <<'PY'
+          import re,requests,html,json,concurrent.futures
+          from pathlib import Path
+          from urllib.parse import urlparse
+          pattern=re.compile(r'mist_global_images_(OS3\.\d+\.\d+\.\d+\.[A-Z]{3}MIXM)_\d{8}\.\d+\.\d+_16\.0_global_[a-f0-9]+\.tgz',re.I)
+          pages=['https://droidforge.net/xiaomi/redmi-note-17-5g-mist?lang=en','https://mifw.net/devices/mist','https://mifw.net/devices/mist?page=1','https://xiaomifirmwareupdater.com/archive/miui/mist/','https://mirom.ezbox.idv.tw/en/phone/mist/','https://upmiui.com/?page=40','https://xiaomihive.com/firmware/mist/']
+          known='mist_global_images_OS3.0.304.0.WPUMIXM_20260917.0000.00_16.0_global_c4450c4e16.tgz'
+          hosts=['bn.d.miui.com','bigota.d.miui.com','hugeota.d.miui.com','cdnorg.d.miui.com','ultimateota.d.miui.com']
+          def get(page):
+              try:
+                  r=requests.get(page,timeout=35,headers={'User-Agent':'Mozilla/5.0'});r.raise_for_status()
+                  return page,html.unescape(r.text).replace('\\/','/'),None
+              except Exception as e: return page,'',str(e)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool: results=list(pool.map(get,pages))
+          names={known}
+          for page,body,error in results:
+              names.update(m.group(0) for m in pattern.finditer(body))
+          def ver(n): return tuple(map(int,pattern.fullmatch(n).group(1).removeprefix('OS').split('.')[:4]))
+          assert ver(known)==(3,0,304,0), 'Version parser regression'
+          names=sorted(names,key=ver,reverse=True)
+          print('Discovered candidates:', names, flush=True)
+          report={'sources':[{'page':p,'error':e,'matches':sorted(set(m.group(0) for m in pattern.finditer(b)))} for p,b,e in results],'candidates':names,'probes':[]}
+          out=Path('reports/firmware-source.json')
+          out.write_text(json.dumps(report,indent=2))
+          for name in names:
+              version=pattern.fullmatch(name).group(1)
+              for host in hosts:
+                  url=f'https://{host}/{version}/{name}'
+                  try:
+                      with requests.get(url,headers={'Range':'bytes=0-15','Accept-Encoding':'identity'},stream=True,timeout=20) as r:
+                          ok=r.status_code in (200,206) and r.raw.read(2)==b'\x1f\x8b'
+                          report['probes'].append({'url':url,'status':r.status_code,'gzip':ok})
+                      if ok:
+                          report['selected']=url
+                          out.write_text(json.dumps(report,indent=2))
+                          Path('rom-url.txt').write_text(url)
+                          print('Selected:',url)
+                          raise SystemExit(0)
+                  except requests.RequestException as e: report['probes'].append({'url':url,'error':str(e)})
+                  finally: out.write_text(json.dumps(report,indent=2))
+          raise SystemExit('No reachable matching fastboot package; see firmware-source.json')
+          PY
+          cat reports/firmware-source.json
+          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.tgz "$(cat rom-url.txt)"
+          sha256sum stock.tgz > reports/archive.sha256
+          md5sum stock.tgz > reports/archive.md5
+          tar -tzf stock.tgz > reports/archive-files.txt
+          mkdir stock
+          tar -xzf stock.tgz -C stock --no-same-owner --no-same-permissions
+      - name: Discover and download HyperOS 4 full OTA
+        if: matrix.firmware == 'hyperos4'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p reports stock/images
+          python "$GITHUB_WORKSPACE/scripts/discover-mist-ota.py"
+          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.zip "$(cat rom-url.txt)"
+          sha256sum stock.zip > reports/archive.sha256
+          md5sum stock.zip > reports/archive.md5
+          python - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          p=Path('stock.zip')
+          expected=json.loads(Path('reports/firmware-source.json').read_text()).get('md5')
+          if expected:
+              with p.open('rb') as f: actual=hashlib.file_digest(f,'md5').hexdigest()
+              assert actual==expected, 'OTA MD5 mismatch'
+          with zipfile.ZipFile(p) as z:
+              assert 'payload.bin' in z.namelist(), 'No payload.bin'
+              Path('reports/archive-files.txt').write_text('\n'.join(z.namelist()))
+              for n in ('META-INF/com/android/metadata','payload_properties.txt'):
+                  if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
+          PY
+          python -m dumpyara stock.zip -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
+      - name: Extract partitions and inventory
+        if: matrix.firmware == 'hyperos3'
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          find stock -type f -print0 | xargs -0 -r sha256sum > reports/stock-files.sha256
+          find stock -type f -print0 | xargs -0 -r file > reports/stock-file-types.txt
+          python -m dumpyara stock.tgz -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
+          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
+          find dump -type f \( -name '*.prop' -o -name 'fstab*' -o -name '*.rc' -o -name '*manifest*.xml' -o -name '*compatibility_matrix*.xml' -o -name 'modules.load*' \) -print0 | while IFS= read -r -d '' p; do
+            printf '\n===== %s =====\n' "$p"
+            cat "$p"
+          done > reports/configuration.txt
+          find dump -type f -name '*.ko' > reports/kernel-modules.txt
+          find dump -type f -name '*.so' > reports/shared-libraries.txt
+          find stock -type f \( -name '*.xml' -o -name '*.txt' \) -print0 | while IFS= read -r -d '' p; do
+            printf '\n===== %s =====\n' "$p"; cat "$p"
+          done > reports/flash-metadata.txt
+      - name: Collect deep hardware evidence
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mist-work"
+          mkdir -p reports
+          test -d stock
+          git clone --depth=1 -b lineage-23.2 https://github.com/sky-lineage/android_device_xiaomi_sky.git reference
+          git -C reference rev-parse HEAD > reports/reference-commit.txt
+          git clone --depth=1 https://android.googlesource.com/platform/external/avb avb
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/torvalds/linux.git linux
+          git -C linux sparse-checkout set scripts
+          git -C avb rev-parse HEAD > reports/avb-tool-commit.txt
+          git -C mkbootimg rev-parse HEAD > reports/boot-tool-commit.txt
+          git -C linux rev-parse HEAD > reports/kernel-tool-commit.txt
+          python "$GITHUB_WORKSPACE/scripts/mist-deep-analysis.py" "$PWD"
+      - name: Upload firmware analysis (no raw firmware or proprietary blobs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mist-deep-analysis-${{ matrix.firmware }}
+          path: ${{ runner.temp }}/mist-work/reports/
+          if-no-files-found: warn
+          retention-days: 30
+  compare:
+    needs: analyze
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mist-deep-analysis-*
+          path: evidence
+      - run: python3 scripts/compare-mist-firmware.py evidence comparison
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mist-dual-comparison
+          path: comparison
+          retention-days: 30
