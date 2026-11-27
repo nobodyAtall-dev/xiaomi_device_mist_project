@@ -1,0 +1,86 @@
+name: Mist Phase 4 - LineageOS 24 build
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Label of Linux runner with at least 400 GiB free disk and 32 GiB RAM
+        default: self-hosted
+        type: string
+      target:
+        description: Build target
+        type: choice
+        options: [check, bootimages, bacon]
+        default: check
+      jobs:
+        description: Parallel build jobs
+        default: '8'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check runner resources
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mist-build-reports"
+          df -h "$RUNNER_TEMP"
+          free -h
+          test "$(df -Pk "$RUNNER_TEMP" | awk 'NR==2 {print $4}')" -ge 419430400 || { echo 'Need at least 400 GiB free'; exit 1; }
+          test "$(awk '/MemTotal/ {print $2}' /proc/meminfo)" -ge 30000000 || { echo 'Need approximately 32 GiB RAM'; exit 1; }
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools unzip xsltproc zip zlib1g-dev python3
+          mkdir -p "$RUNNER_TEMP/mist-bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o "$RUNNER_TEMP/mist-bin/repo"
+          chmod +x "$RUNNER_TEMP/mist-bin/repo"
+          echo "$RUNNER_TEMP/mist-bin" >> "$GITHUB_PATH"
+      - name: Sync LineageOS and separate Mist trees
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mist-lineage"
+          cd "$RUNNER_TEMP/mist-lineage"
+          git config --global user.name nobodyAtall-dev
+          git config --global user.email hashynaa@gmail.com
+          repo init -u https://github.com/LineageOS/android.git -b lineage-24.0 --git-lfs --no-clone-bundle
+          mkdir -p .repo/local_manifests
+          cp "$GITHUB_WORKSPACE/manifests/mist.xml" .repo/local_manifests/mist.xml
+          gh auth setup-git --hostname github.com
+          repo sync -c --no-clone-bundle --no-tags -j8 --fail-fast 2>&1 | tee "$RUNNER_TEMP/mist-build-reports/sync.log"
+          repo manifest -r -o "$RUNNER_TEMP/mist-build-reports/resolved-manifest.xml"
+      - name: Build configuration and requested target
+        env:
+          BUILD_TARGET: ${{ inputs.target }}
+          BUILD_JOBS: ${{ inputs.jobs }}
+        run: |
+          set -eo pipefail
+          [[ "$BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]
+          cd "$RUNNER_TEMP/mist-lineage"
+          source build/envsetup.sh
+          lunch lineage_mist-userdebug
+          m -j"$BUILD_JOBS" nothing 2>&1 | tee "$RUNNER_TEMP/mist-build-reports/configuration.log"
+          case "$BUILD_TARGET" in
+            check) ;;
+            bootimages) m -j"$BUILD_JOBS" bootimage initbootimage vendorbootimage dtboimage recoveryimage 2>&1 | tee "$RUNNER_TEMP/mist-build-reports/build.log" ;;
+            bacon) m -j"$BUILD_JOBS" bacon 2>&1 | tee "$RUNNER_TEMP/mist-build-reports/build.log" ;;
+            *) exit 1 ;;
+          esac
+      - name: Upload build diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mist-phase4-build-review
+          path: ${{ runner.temp }}/mist-build-reports/
+          if-no-files-found: warn
+          retention-days: 14
