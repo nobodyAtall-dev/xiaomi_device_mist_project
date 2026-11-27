@@ -1,34 +1,92 @@
-# Mist LineageOS 24.0 — project changelog
-Updated 2026-11-27 (Malaysia time).
+# Mist — LineageOS 24.0
 
-## Rules for future chats
-Read this file first. Update it after every project change or reviewed run: date, commit, run/artifact links, verified findings, errors, fixes, remaining work. Target LineageOS 24.0 / Android 17 directly for Redmi Note 17 5G / POCO M8 Power 5G (mist). Keep automation and findings here only; android_device_xiaomi_mist and android_vendor_xiaomi_mist must remain clean source trees (normal Lineage extraction scripts allowed). Vendor private recommended. Git identity nobodyAtall-dev / hashynaa@gmail.com; GH_PAT secret already configured, never expose it. Downloads use aria2 -x16 -s16 -k1M. Do not flash or publish during research. Never equate green CI with complete extraction or bootability.
+Redmi Note 17 5G / POCO M8 Power 5G (mist)  
+Target: LineageOS 24.0 (Android 17)  
+Last updated: 27 November 2026
 
-## History
-- Initial workflow 6d2783f0cc2a317994a38cd4aeaadebb8964a196 generated draft trees; replaced by analysis-only at user request.
-- Run 45916919483 failed because bn.d.miui.com missing from allowlist. Fixed automatic discovery and removed tree generation/publishing in 502df2e49187abdc2438dcce6acc6f1792cb34e6.
-- Run 45917251860 failed on OS3 version parser. Fixed a8220e510ae4d6be70c1cef3d62567d552c7b8d8.
-- Phase 1 success: https://github.com/nobodyAtall-dev/xiaomi_device_mist_project/actions/runs/45917382922 ; artifact 15162409622. 13 reports. HyperOS 3 OS3.0.304.0.WPUMIXM Android 16, 7.5 GiB, 16 connections, peak 251 MiB/s. Rescue/modem extraction errors; A/B duplicate names skipped.
-- Phase 1B success: https://github.com/nobodyAtall-dev/xiaomi_device_mist_project/actions/runs/45918710446 ; artifact 15164370694. 1283 files, 131 physical metadata rows, 33 DT candidates, 5312 ELF files, 757 module entries, 1193 configs, 977 sky path matches and 495 missing, six diagnostics. Previous chat reported parrot, ARM64-only vendor, virtual A/B, init_boot, recovery, system_dlkm, kernel 6.6.118 android15-8, super 10200547328 bytes, group 10190061568 bytes; recheck actual artifact before using these values. Rescue remains unresolved; modem completeness unverified. Node 20 deprecation warning nonblocking. Artifacts expire after 30 days.
+## 1. Project status
 
-## References
-- https://github.com/sky-lineage/android_device_xiaomi_sky/tree/lineage-23.2 and https://github.com/sky-lineage/android_vendor_xiaomi_sky/tree/lineage-23.2 — parrot, useful blob paths/fixups.
-- https://github.com/xiaomi-ravelin/android_device_xiaomi_sm4450-common/tree/lineage-24.0 — parrot, kernel 6.6, ARM64-only, system_dlkm. Strong structural reference; matching populated common vendor not verified.
-- https://github.com/xiaomi-ravelin/android_device_xiaomi_sky/tree/lineage-24.0 and https://github.com/xiaomi-sm4450-sky/android_vendor_xiaomi_sky/tree/lineage-24.0 — not verified matched pair.
-- https://github.com/LineageOS/android_device_xiaomi_garnet/tree/lineage-24.0 and lineage-23.2 — parrot/SM7435, HAL/SELinux patterns, not binary donor.
-- xiaomi-ravelin/android_kernel_xiaomi_sm4450, android_kernel_xiaomi_sm4450-devicetrees, android_kernel_xiaomi_sm4450-modules, lineage-24.0; mist support unverified.
+| Phase | Description | Status |
+| --- | --- | --- |
+| 1 | HyperOS 3 firmware extraction | Completed |
+| 1B | Deep hardware analysis | Completed; limitations below |
+| 2 | Reference research and dual-firmware comparison | In progress |
+| 3 | Device and vendor tree bring-up | Pending |
+| 4 | ROM compilation and debugging | Pending |
+| 5 | Boot and hardware testing | Pending |
 
-## Current phase 2 — dual firmware comparison
-HyperOS 3 Global fastboot baseline OS3.0.304.0.WPUMIXM (Android 16). HyperOS 4 Global full OTA OS4.0.8.0.XPUMIXM (Android 17), listed Nov 23, 5.2 GB, mist_global-ota_full-OS4.0.8.0.XPUMIXM-user-17.0-3695aedf1f.zip; published MD5 3695aedf1f96d96bbdac41bb247bc8bf. No matching fastboot listed. Source https://mirom.ezbox.idv.tw/en/phone/mist/roms-global-stable/
-- Workflow .github/workflows/mist-phase2.yml commit 1c6eb26fe326c405571e088e2096fcbbc1bbce53.
-- OTA discovery scripts/discover-mist-ota.py df10d5bc2e51566c7aec409b59b1fa084761c2a8.
-- Comparison scripts/compare-mist-firmware.py e8254c1108da18e040b2295388ff1c134cd42b09.
-- OTA raw image retention attempt 9f06eaf032f64b405d85e7d47231a60526851a4b.
-Separate runners, artifacts mist-deep-analysis-hyperos3, mist-deep-analysis-hyperos4, mist-dual-comparison. Not runtime tested. Compare paths/properties/config indexes/ELF changes and sky blob list. OTA may omit physical/super metadata. Do not mix incompatible firmware/kernel/modules. Prefer coherent HyperOS 4 baseline after validation.
+**Current task:** Phase 2 workflow is running, as reported by the user. Review its results before creating the trees.
 
-## Next actions
-1. Run Phase 2 from main; inspect all three artifacts and logs, verify payload image retention and identity; record fixes here.
-2. Compare actual HALs, VINTF, module ABI, kernel/AVB, partition sizes, and Ravelin/Garnet reference fixups; broader multi-reference comparisons and content hashing still needed.
-3. Decide prebuilt mist kernel vs source-supported kernel. Use actual mist DTB/DTBO and modules.
-4. Create separate tree generation workflow using Lineage extract-utils, reviewed proprietary list, correct Soong/SELinux/AVB/partition/init configs and upstream licensing. No overwrites without approval.
-5. Compile LineageOS 24.0 and debug; test boot and hardware. No compile or boot success claimed yet.
+## 2. Firmware
+
+| Firmware | Version | Package |
+| --- | --- | --- |
+| HyperOS 3 Global | OS3.0.304.0.WPUMIXM (Android 16) | Fastboot TGZ |
+| HyperOS 4 Global | OS4.0.8.0.XPUMIXM (Android 17) | Full OTA ZIP (payload.bin) |
+
+Use HyperOS 3 for factory partition information and HyperOS 4 as the preferred Android 17 baseline after validation. Keep kernel, modules and vendor binaries compatible; do not mix releases blindly.
+
+HyperOS 4 package: `mist_global-ota_full-OS4.0.8.0.XPUMIXM-user-17.0-3695aedf1f.zip`  
+Published MD5: `3695aedf1f96d96bbdac41bb247bc8bf`  
+[Global firmware source](https://mirom.ezbox.idv.tw/en/phone/mist/roms-global-stable/)
+
+## 3. Findings
+
+| Item | HyperOS 3 baseline |
+| --- | --- |
+| Platform | parrot |
+| Vendor architecture | ARM64-only |
+| Kernel | 6.6.118, android15-8 |
+| Partition scheme | Virtual A/B, dynamic partitions |
+| Boot partitions | init_boot, vendor_boot, recovery |
+| Kernel modules | system_dlkm and vendor_dlkm |
+| Super size | 10,200,547,328 bytes |
+| Dynamic group size | 10,190,061,568 bytes |
+
+These values were recorded in previous analysis; verify them against the original artifacts before using them in build configuration. HyperOS 4 values are pending.
+
+Phase 1B logged 131 physical partition metadata rows, 33 DT candidates, 5,312 ELF files, 757 module entries, 1,193 hardware configurations, 977 matching Sky blob paths and 495 missing paths. Path matches do not establish binary compatibility.
+
+## 4. Reference trees
+
+| Reference | Branch | Purpose |
+| --- | --- | --- |
+| [Ravelin SM4450 common](https://github.com/xiaomi-ravelin/android_device_xiaomi_sm4450-common/tree/lineage-24.0) | 24.0 | Primary structure: Parrot, Linux 6.6, ARM64, system_dlkm |
+| [Sky device](https://github.com/sky-lineage/android_device_xiaomi_sky/tree/lineage-23.2) / [vendor](https://github.com/sky-lineage/android_vendor_xiaomi_sky/tree/lineage-23.2) | 23.2 | Blob selection and fixups |
+| [Ravelin Sky](https://github.com/xiaomi-ravelin/android_device_xiaomi_sky/tree/lineage-24.0) / [Sky vendor](https://github.com/xiaomi-sm4450-sky/android_vendor_xiaomi_sky/tree/lineage-24.0) | 24.0 | Android 17 device structure; pairing unverified |
+| [Garnet](https://github.com/LineageOS/android_device_xiaomi_garnet/tree/lineage-24.0) / [23.2](https://github.com/LineageOS/android_device_xiaomi_garnet/tree/lineage-23.2) | 24.0 / 23.2 | HAL and SELinux patterns; different SoC |
+
+Ravelin kernel references: [kernel](https://github.com/xiaomi-ravelin/android_kernel_xiaomi_sm4450), [DT](https://github.com/xiaomi-ravelin/android_kernel_xiaomi_sm4450-devicetrees), [modules](https://github.com/xiaomi-ravelin/android_kernel_xiaomi_sm4450-modules), all lineage-24.0. Mist support and a matching populated common vendor tree are not verified.
+
+## 5. Development history
+
+| Change | Result |
+| --- | --- |
+| Initial workflow ([commit](../../commit/6d2783f0cc2a317994a38cd4aeaadebb8964a196)) | Draft generation superseded by research-only approach |
+| [First failed run](../../actions/runs/45916919483) | Missing Xiaomi CDN; fixed in [502df2e](../../commit/502df2e49187abdc2438dcce6acc6f1792cb34e6) |
+| [Second failed run](../../actions/runs/45917251860) | Version parsing error; fixed in [a8220e5](../../commit/a8220e510ae4d6be70c1cef3d62567d552c7b8d8) |
+| [Phase 1 run](../../actions/runs/45917382922) | Passed; 7.5 GiB, 16 connections, peak 251 MiB/s; [13 reports](../../actions/runs/45917382922/artifacts/15162409622) |
+| [Phase 1B run](../../actions/runs/45918710446) | Passed with six diagnostics; [1,283 reports](../../actions/runs/45918710446/artifacts/15164370694) |
+| Phase 2 | [Workflow](.github/workflows/mist-phase2.yml), [OTA discovery](scripts/discover-mist-ota.py), [comparison](scripts/compare-mist-firmware.py); runtime results pending |
+| 27 November 2026 | Simplified this changelog; no workflow or source tree changes |
+
+Phase 2 outputs: `mist-deep-analysis-hyperos3`, `mist-deep-analysis-hyperos4`, `mist-dual-comparison`. Separate runners limit disk usage. Artifacts expire after 30 days.
+
+## 6. Open issues and next steps
+
+- [ ] Review Phase 2 results and verify full OTA identity and payload extraction, including raw image retention.
+- [ ] Review rescue extraction failure, modem extraction completeness, duplicate A/B names and kernel extraction diagnostics. Node 20 deprecation warning is nonblocking.
+- [ ] Compare HyperOS 4 HALs, VINTF, ELF dependencies, kernel ABI, AVB and partition layout. Broader reference comparisons and binary content hashes remain to implement. OTA may omit physical partition metadata.
+- [ ] Choose a coherent Mist kernel strategy (stock prebuilt or verified source) and matching DTB/DTBO/modules.
+- [ ] Generate clean device and vendor trees using Lineage extract-utils, reviewed blobs, Soong definitions, SELinux and init configuration; preserve licensing.
+- [ ] Compile LineageOS 24.0 and debug; validate boot and hardware.
+
+No compilation or boot success has been established.
+
+## 7. Project conventions
+
+- Automation and reports stay in this repository. Output repositories: `android_device_xiaomi_mist` and `android_vendor_xiaomi_mist` (private vendor recommended). Only legitimate source/build files belong there.
+- Automatic firmware discovery and downloads: `aria2c -x16 -s16 -k1M`.
+- Git identity: `nobodyAtall-dev` / `hashynaa@gmail.com`. Use existing `GH_PAT` secret for authorized publishing; never expose it.
+- No flashing, publishing during research, or overwriting existing trees without approval.
+- Future chats: read this file first; update status, findings, fixes, relevant links and next steps after each change or reviewed run. Keep entries concise, factual and chronological.
