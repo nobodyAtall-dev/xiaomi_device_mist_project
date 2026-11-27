@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="mist-github" fetch="https://github.com/" />
+  <project name="nobodyAtall-dev/android_device_xiaomi_mist" path="device/xiaomi/mist" remote="mist-github" revision="lineage-24" />
+  <project name="nobodyAtall-dev/android_vendor_xiaomi_mist" path="vendor/xiaomi/mist" remote="mist-github" revision="lineage-24" />
+  <project name="nobodyAtall-dev/android_kernel_xiaomi_mist-prebuilt" path="kernel/xiaomi/mist-prebuilt" remote="mist-github" revision="lineage-24" />
+  <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="mist-github" revision="lineage-24.0" />
+</manifest>
