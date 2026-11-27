@@ -12,10 +12,10 @@ Last updated: 27 November 2026
 | 1B | Deep hardware analysis | Completed; limitations below |
 | 2 | Reference research and dual-firmware comparison | Completed; integration review pending |
 | 3 | Device, vendor and standalone kernel bring-up | Initial candidates published; build integration pending |
-| 4 | ROM compilation and debugging | Pending |
+| 4 | ROM compilation and debugging | Build workflow prepared; integration and runtime checks pending |
 | 5 | Boot and hardware testing | Pending |
 
-**Current task:** Review Phase 3 integration gaps before publication. All destination repositories are ready.
+**Current task:** Phase 4 build integration and configuration validation. Initial trees published; reference-based changes committed.
 
 ## 2. Firmware
 
@@ -153,3 +153,10 @@ The project developer confirmed previous Mist kernel builds encountered MIHW iss
 - Vendor (private): nobodyAtall-dev/android_vendor_xiaomi_mist, commit 1eda755fa7217ad4f146c4a36e8d79cdbb03c1e9.
 - Prebuilt kernel (private): nobodyAtall-dev/android_kernel_xiaomi_mist-prebuilt, commit 257be77478c517543fafc30af0cb9bce2139fbbc.
 - GH_PAT publication and branch verification succeeded. No main branches remain in source repositories. No additional repositories required. These are initial development candidates, not build- or boot-validated trees. Next: review committed build configuration, integrate actual HALs/SELinux/init, resolve dependency providers, verify prebuilt flags and AVB/partition layout, then run LineageOS 24 build checks. Do not rerun initial publication; subsequent changes should be incremental commits.
+
+### Phase 4 integration — 27 November 2026
+- Cross-checked Ravelin common/Sky and Garnet lineage-24.0 BoardConfig/product definitions and LineageOS android_build core/Makefile, board_config.mk and vendor_lineage kernel tasks.
+- Device commits `076406a6a40a232f08cc25fd39703b79795468de` (prebuilt force, init_boot pagesize, module blocklists/no-strip, AVB development keys, audio/WLAN/RIL flags) and `039b10684aee861a2da994d2d66bad8f196000d5` (Ravelin-derived platform HAL package candidates, shipping API 35). Package availability, audio and hardware-specific configuration still need validation; API 35 is reference/vendor-derived and actual factory shipping API requires verification.
+- Kernel commit `adb7f5ea0f3b408f2baccbb69be56db4f65ea286` renames dtb/dtb.img to dtb/dtb.dtb with identical blob SHA, because Android build concatenates *.dtb. No kernel binaries modified. Vendor unchanged.
+- Added [local manifest](manifests/mist.xml) and [Phase 4 build workflow](.github/workflows/mist-phase4.yml), commits fc977fd2312f05d7d407203d61b0da59150b7701 and 3501186acad45c01c002ef24ac6696bafce25016. Uses upstream lineage-24.0, Mist lineage-24; self-hosted Linux default, minimum 400 GiB free and approximately 32 GiB RAM, selectable check/bootimages/bacon. Runtime untested; diagnostics only. Private source checkout uses GH_PAT. Restrict runner to trusted workflow execution.
+- Still outstanding: Mist-specific audio configs, fingerprint/camera/sensor details, VINTF manifests, init services, SELinux, ELF provider closure/fixups, stock bootconfig and AVB/partition layout. Do not flash. No additional repositories required. First configuration build is needed; no compile/boot success claimed.
