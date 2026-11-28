@@ -30,7 +30,8 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd libarchive-tools
+          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils liblzma-dev build-essential pkg-config zstd libarchive-tools
+          test -f /usr/include/lzma.h
           python3 -m venv "$RUNNER_TEMP/mist-venv"
           "$RUNNER_TEMP/mist-venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4
           echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
@@ -116,18 +117,17 @@ jobs:
               for n in ('META-INF/com/android/metadata','payload_properties.txt'):
                   if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
           PY
-          # Extract every payload partition independently of filesystem dumpers.
-          unzip -p stock.zip payload.bin > payload.bin
+          # Extract every payload partition directly from the verified OTA ZIP.
           git clone --depth=1 https://github.com/ssut/payload-dumper-go.git payload-tool
           git -C payload-tool rev-parse HEAD > reports/payload-tool-commit.txt
           (cd payload-tool && go build -o ../payload-dumper-go .)
-          ./payload-dumper-go -o stock/images payload.bin 2>&1 | tee reports/payload-extraction.log
-          ./payload-dumper-go -l payload.bin > reports/payload-partitions.txt
+          ./payload-dumper-go -l stock.zip > reports/payload-partitions.txt
+          ./payload-dumper-go -o stock/images stock.zip 2>&1 | tee reports/payload-extraction.log
       - name: Inventory every image and nested filesystem
         run: |
           set -euxo pipefail
           cd "$RUNNER_TEMP/mist-full-${{ matrix.firmware }}"
-          git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_system_tools_mkbootimg.git mkbootimg
+          git clone --depth=1 -b android-17.0.0_r1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg
           git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_external_avb.git avb
           git -C mkbootimg rev-parse HEAD > reports/mkbootimg-commit.txt
           git -C avb rev-parse HEAD > reports/avb-commit.txt
@@ -141,7 +141,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   compare:
-    if: always()
+    if: ${{ needs.analyze.result == 'success' }}
     needs: analyze
     runs-on: ubuntu-24.04
     steps:
