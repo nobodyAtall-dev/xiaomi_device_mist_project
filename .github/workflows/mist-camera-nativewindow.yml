@@ -1,0 +1,99 @@
+name: Mist Phase 5 - Nativewindow ELF correction
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/mist-camera-nativewindow.yml']
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare verified patching tools and private checkout
+        env:
+          GH_${{ secrets.GH_PAT }}: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y patchelf binutils
+          patchelf --help 2>&1 | grep -- --clear-symbol-version
+          mkdir -p work/reports
+          test "$(gh api repos/nobodyAtall-dev/android_vendor_xiaomi_mist --jq .private)" = true
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' clone --depth=1 -b lineage-24 https://github.com/nobodyAtall-dev/android_vendor_xiaomi_mist.git work/vendor
+          git -C work/vendor rev-parse HEAD > work/reports/input-commit.txt
+      - name: Normalize only verified nativewindow imports
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, pathlib, re, subprocess
+          root=pathlib.Path('work/vendor/proprietary/vendor/lib64')
+          reports=pathlib.Path('work/reports')
+          targets={
+              'libarcsoft_beautyshot.so': ('6107f76ee572240ff3ed38201ffe643531799c25f505586c466b7a1aa89503e3', ['allocate','describe','lock','release','unlock']),
+              'libMiPhotoFilter.so': ('5cc7c366d32c35764d259bae9604655af49cbf4edc4570b7cdee28c42bb069df', ['allocate','describe','isSupported','lockPlanes','release','unlock']),
+          }
+          def read(p,*args):
+              return subprocess.check_output(['readelf',*args,str(p)],text=True)
+          def sha(p):
+              with p.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
+          def symbols(p):
+              result={}
+              for line in read(p,'--dyn-syms','--wide').splitlines():
+                  fields=line.split()
+                  if len(fields)>=8 and re.fullmatch(r'\d+:',fields[0]):
+                      name=fields[7]
+                      result[name]=(fields[3],fields[4],fields[5],fields[6]=='UND')
+              return result
+          def needed(p):
+              return re.findall(r'\(NEEDED\).*?\[(.*?)\]',read(p,'-d'))
+          for name,(expected,suffixes) in targets.items():
+              p=root/name
+              before=symbols(p)
+              deps=needed(p)
+              wanted=['AHardwareBuffer_'+s for s in suffixes]
+              assert 'libnativewindow.so' in deps
+              if all(s in before and before[s][-1] for s in wanted) and not any(s+'@LIBNATIVEWINDOW' in before for s in wanted):
+                  print(name,'already normalized'); continue
+              assert sha(p)==expected, (name,'unexpected input hash',sha(p))
+              (reports/(name+'.before.txt')).write_text(read(p,'-d','--dyn-syms','--wide','--version-info'))
+              for s in wanted:
+                  assert s+'@LIBNATIVEWINDOW' in before and before[s+'@LIBNATIVEWINDOW'][-1], s
+                  subprocess.run(['patchelf','--clear-symbol-version',s,str(p)],check=True)
+              expected_symbols=dict(before)
+              for s in wanted:
+                  expected_symbols[s]=expected_symbols.pop(s+'@LIBNATIVEWINDOW')
+              assert symbols(p)==expected_symbols, (name,'unexpected dynamic symbol changes')
+              assert needed(p)==deps, (name,'unexpected dependency changes')
+              (reports/(name+'.after.txt')).write_text(read(p,'-d','--dyn-syms','--wide','--version-info'))
+              (reports/(name+'.sha256')).write_text(expected+'  original\n'+sha(p)+'  patched\n')
+              print(name,'verified',sha(p))
+          PY
+          git -C work/vendor diff --stat
+      - name: Publish verified binary changes
+        env:
+          GH_${{ secrets.GH_PAT }}: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          cd work/vendor
+          if git diff --quiet; then echo 'Already corrected'; exit 0; fi
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' proprietary/vendor/lib64/libMiPhotoFilter.so proprietary/vendor/lib64/libarcsoft_beautyshot.so | sort)"
+          git config user.name nobodyAtall-dev
+          git config user.email nobodyAtall-dev@users.noreply.github.com
+          git add -u
+          git commit -m "mist: normalize camera nativewindow symbol imports for Android 17"
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:lineage-24
+          git rev-parse HEAD > ../reports/publication.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mist-camera-nativewindow-report
+          path: work/reports/
+          if-no-files-found: warn
