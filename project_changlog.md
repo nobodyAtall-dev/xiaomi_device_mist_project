@@ -549,3 +549,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5.7 — Slot A firmware fastboot synchronization
 - Developer supplied mist-firmware-sync.txt: 22/22 sending and 22/22 writing operations returned OKAY, exclusively targeting the 22 allowlisted slot A firmware partitions using verified slot B full-partition backups. No ROM partition flash in this procedure. Readback and boot not yet verified. Next boot recovery on current slot B without changing slots, compare full hashes of both firmware slots to saved B backup inventory, then retry V9 on A only if verified. Experimental procedure; successful fastboot writes do not establish boot compatibility. No source changes.
+
+### Phase 5.7 — Firmware readback passed; V9 second boot failed
+- Post-flash recovery on B confirmed all 22 firmware pairs match full SHA256 and prior B inventory. Developer confirmed slot A activation followed by Mi logo for 4–5 seconds and repeated reboot, recovery subsequently shows B. Firmware mismatch eliminated for allowlisted partitions but not sufficient to resolve boot failure. Automatic fallback suspected, exact A failure not established. Collect fresh pstore, bootconfig, recovery dmesg and fastboot slot state. Logical OTA integrity still unverified. No further firmware writes or speculative source changes.
