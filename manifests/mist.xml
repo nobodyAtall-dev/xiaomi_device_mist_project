@@ -27,4 +27,7 @@
     <linkfile src="tools/mist-caf-namespace.bp" dest="hardware/qcom-caf/sm8450-6.6/Android.bp" />
   </project>
   <project name="nobodyAtall-dev/vendor_opensource_display-drivers" path="hardware/qcom-caf/sm8450-6.6/display/mist-kernel-uapi" remote="mist-github" revision="lineage-24" />
+  <!-- Preserve legacy ION support and the IMS allocator destructor ABI. -->
+  <remove-project name="LineageOS/android_system_memory_libdmabufheap" path="system/memory/libdmabufheap" />
+  <project name="nobodyAtall-dev/android_system_memory_libdmabufheap" path="system/memory/libdmabufheap" remote="mist-github" revision="lineage-24" groups="pdk" />
 </manifest>
