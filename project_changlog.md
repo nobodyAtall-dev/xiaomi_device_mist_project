@@ -537,3 +537,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5.7 — Local HyperOS 4 firmware extraction passed
 - Developer downloaded and confirmed checksum OK for OS4.0.8.0.XPUMIXM. Python 3.13 venv dependency installed; dumpyara 1.1.0 requires original OTA archive rather than raw payload.bin. Corrected extraction produced all 22 allowlisted images with sizes and SHA256 recorded in mist-hyperos4-firmware.txt. dsp (67108864 bytes) and pvmfw (1048576 bytes) match earlier complete slot B hashes. Other images require exact-length comparison, and firmware extraction is not proof of a supported flashing procedure. No device writes or ROM source changes. Next verify active B and stock payload-length image contents against both slots.
+
+### Phase 5.7 — Firmware verification V2 partial result
+- Recovery ADB and slot B confirmed. 21 firmware image paths previously under temp_raw_images no longer found, consistent with Dumpyara temporary-file cleanup; tz.img remains. Exact-length tz SHA256 matches stock on B and differs on A. Earlier extraction inventory retained all 22 sizes and SHA256 values, allowing read-only verification without re-extraction. No firmware writes or source changes. Actual cause of missing temporary files not independently established.
