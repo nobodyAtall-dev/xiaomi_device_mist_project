@@ -540,3 +540,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5.7 — Firmware verification V2 partial result
 - Recovery ADB and slot B confirmed. 21 firmware image paths previously under temp_raw_images no longer found, consistent with Dumpyara temporary-file cleanup; tz.img remains. Exact-length tz SHA256 matches stock on B and differs on A. Earlier extraction inventory retained all 22 sizes and SHA256 values, allowing read-only verification without re-extraction. No firmware writes or source changes. Actual cause of missing temporary files not independently established.
+
+### Phase 5.7 — Exact-length stock firmware verification V3 passed
+- mist-hyperos4-slot-verification-v3.txt confirms 22/22 extracted OS4.0.8.0.XPUMIXM firmware hashes match slot B at exact stock image lengths; slot A 0/22, all reads complete. Firmware mismatch conclusively established, causation of V9 boot failure not yet established. Retain verified V9 physical images and avoid modifying shared/calibration partitions. No firmware writes or ROM source changes. Device-specific low-level firmware synchronization remains untested; recommend backups of both firmware slots before any write and stock-supported recovery where available.
