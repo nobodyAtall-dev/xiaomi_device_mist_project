@@ -498,3 +498,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5.6 — Allocator repository migration — 28 November 2026
 - Developer confirmed updated mist.xml downloaded (2901 bytes), but existing checkout sync rejected mismatched hooks metadata between original project and new fork object store. This is a local Repo migration conflict, not a source compilation failure. Recommended backing up checkout, metadata and Git history before scoped repo sync --force-sync for system/memory/libdmabufheap only, then verifying commit 60c9493. Preserve out. Fresh checkouts using the updated manifest avoid this replacement conflict. Migration and allocator validation not yet confirmed.
+
+### Phase 5.6 — Allocator repository migration successful — 28 November 2026
+- Developer confirmed clean allocator worktree, successful backup and Git bundle (719 objects, 296.38 KiB), and scoped repo sync --force-sync completed successfully (1/1, 1.200s). Hooks mismatch was handled during migration. Local HEAD verification against 60c9493 and combined allocator/IMS/ANC regression compilation remain pending. No additional source modifications; preserve out.
