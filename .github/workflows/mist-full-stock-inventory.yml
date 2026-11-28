@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd libarchive-tools android-sdk-lp-tools
+          sudo apt-get install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd libarchive-tools
           python3 -m venv "$RUNNER_TEMP/mist-venv"
           "$RUNNER_TEMP/mist-venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4
           echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
@@ -131,7 +131,6 @@ jobs:
           git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_external_avb.git avb
           git -C mkbootimg rev-parse HEAD > reports/mkbootimg-commit.txt
           git -C avb rev-parse HEAD > reports/avb-commit.txt
-          command -v lpdump lpunpack
           sudo python3 "$GITHUB_WORKSPACE/scripts/mist-full-stock-inventory.py" "$PWD"
       - name: Upload complete inventories and diagnostics
         if: always()
@@ -141,3 +140,23 @@ jobs:
           path: ${{ runner.temp }}/mist-full-${{ matrix.firmware }}/reports/
           if-no-files-found: error
           retention-days: 30
+  compare:
+    if: always()
+    needs: analyze
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mist-full-stock-*
+          path: evidence
+      - name: Compare both complete path inventories
+        run: python3 scripts/mist-full-stock-compare.py evidence comparison
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mist-full-stock-comparison
+          path: comparison/
+          if-no-files-found: error
