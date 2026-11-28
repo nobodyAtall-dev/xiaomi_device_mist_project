@@ -543,3 +543,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5.7 — Exact-length stock firmware verification V3 passed
 - mist-hyperos4-slot-verification-v3.txt confirms 22/22 extracted OS4.0.8.0.XPUMIXM firmware hashes match slot B at exact stock image lengths; slot A 0/22, all reads complete. Firmware mismatch conclusively established, causation of V9 boot failure not yet established. Retain verified V9 physical images and avoid modifying shared/calibration partitions. No firmware writes or ROM source changes. Device-specific low-level firmware synchronization remains untested; recommend backups of both firmware slots before any write and stock-supported recovery where available.
+
+### Phase 5.7 — Both firmware slot backups verified
+- Compared mist-firmware-backup.txt with mist-slot-firmware-validation.txt programmatically: 44/44 full-partition SHA256 hashes match, 22 per slot. Backups stored locally under $HOME/mist-firmware-backup. Backup logs verified, actual backup files remain on developer PC. No writes performed. Inactive-slot-only firmware synchronization is experimental and hard-brick risk remains; verified stock restoration preferred. No source changes.
