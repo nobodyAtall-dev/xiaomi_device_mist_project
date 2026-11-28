@@ -27,6 +27,7 @@ def inventory(root,label):
 def decode(p,label,depth=0):
     if depth>12: errors.append([label,'nesting limit']);return
     if label in seen:return
+    print('Inspecting '+label,flush=True)
     seen.add(label)
     dest=work/hashlib.sha256(label.encode()).hexdigest()[:24];dest.mkdir()
     typ=subprocess.check_output(['file','-b',str(p)],text=True).strip()
@@ -62,7 +63,7 @@ def decode(p,label,depth=0):
                     if len(entries(3))!=1:raise ValueError('multiple LP block devices unsupported')
                     meta=[]
                     for x in entries(0):
-                        name=x[:36].split(b'\\0',1)[0].decode()
+                        name=x[:36].split(b'\0',1)[0].decode()
                         if not re.fullmatch(r'[A-Za-z0-9_.-]+',name):raise ValueError('bad partition name')
                         attr,first,n,group=struct.unpack_from('<IIII',x,36)
                         if first+n>len(ex):raise ValueError('invalid extent range')
@@ -99,9 +100,9 @@ def decode(p,label,depth=0):
                             if q.is_symlink():continue
                             rel=q.relative_to(out).as_posix()
                             if n.lower().endswith(('.img','.img.gz','.img.lz4','.img.xz','.img.zst')):decode(q,label+'!'+rel,depth+1)
-                            if re.search(r'(^|/)(fstab[^/]*|[^/]+\\.rc|[^/]+\\.prop|modules\\.[^/]+|[^/]*contexts[^/]*|[^/]*manifest[^/]*\\.xml|[^/]*compatibility_matrix[^/]*\\.xml)$',rel) and q.stat().st_size<8*1024*1024:
+                            if re.search(r'(^|/)(fstab[^/]*|[^/]+\.rc|[^/]+\.prop|modules\.[^/]+|[^/]*contexts[^/]*|[^/]*manifest[^/]*\.xml|[^/]*compatibility_matrix[^/]*\.xml)$',rel) and q.stat().st_size<8*1024*1024:
                                 data=q.read_bytes()
-                                if b'\\0' not in data:
+                                if b'\0' not in data:
                                     cfg=report/'configs'/hashlib.sha256(label.encode()).hexdigest()[:24]/rel;cfg.parent.mkdir(parents=True,exist_ok=True);cfg.write_bytes(data)
                 finally:
                     if run(['umount',out],'decode.log'):errors.append([label,'unmount failed'])
@@ -118,7 +119,7 @@ def decode(p,label,depth=0):
                         with q.open('rb') as f:m=f.read(4)
                         if m in (bytes.fromhex('02214c18'),bytes.fromhex('04224d18')):
                             rc2=run(['lz4','-d','-f',q,raw],'decode.log')
-                        elif m[:2]==b'\\x1f\\x8b':
+                        elif m[:2]==b'\x1f\x8b':
                             with raw.open('wb') as f:rc2=subprocess.run(['gzip','-dc',q],stdout=f).returncode
                         else:raw=q;rc2=0
                         if not rc2:rc2=run(['bsdtar','-xf',raw,'-C',rd],'decode.log')
@@ -149,7 +150,8 @@ def table(name,head,data):
 try:
     stock=base/'stock'
     inventory(stock,'archive')
-    images=[p for p in stock.rglob('*') if p.is_file() and not p.is_symlink() and re.search(r'\\.img(?:\\.(?:gz|lz4|xz|zst))?$',p.name,re.I)]
+    images=[p for p in stock.rglob('*') if p.is_file() and not p.is_symlink() and (p.name.lower().endswith(('.img','.img.gz','.img.lz4','.img.xz','.img.zst')) or (p.parent.name=='images' and p.suffix.lower() in ('.bin','.mbn','.elf','.fv')))]
+    print(f'Discovered {len(images)} image candidates',flush=True)
     if not images:errors.append(['archive','no images found'])
     for p in sorted(images):decode(p,p.relative_to(stock).as_posix())
 finally:
@@ -157,4 +159,7 @@ finally:
     table('image-coverage.tsv',['image','bytes','sha256','file_type','status','entries'],coverage)
     (report/'errors.json').write_text(json.dumps(errors,indent=2))
     (report/'summary.json').write_text(json.dumps({'images':len(coverage),'entries':len(rows),'errors':len(errors),'opaque_images':sum(x[4]=='opaque' for x in coverage),'complete':not errors and all(x[4]!='opaque' for x in coverage)},indent=2))
-if errors:sys.exit(1)
+print((report/'summary.json').read_text(),flush=True)
+if errors:
+    print(json.dumps(errors,indent=2),file=sys.stderr,flush=True)
+    sys.exit(1)
