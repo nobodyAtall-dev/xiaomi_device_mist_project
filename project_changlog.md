@@ -546,3 +546,6 @@ The project developer confirmed LineageOS 24 will be synchronized and compiled l
 
 ### Phase 5.7 — Both firmware slot backups verified
 - Compared mist-firmware-backup.txt with mist-slot-firmware-validation.txt programmatically: 44/44 full-partition SHA256 hashes match, 22 per slot. Backups stored locally under $HOME/mist-firmware-backup. Backup logs verified, actual backup files remain on developer PC. No writes performed. Inactive-slot-only firmware synchronization is experimental and hard-brick risk remains; verified stock restoration preferred. No source changes.
+
+### Phase 5.7 — Slot A firmware fastboot synchronization
+- Developer supplied mist-firmware-sync.txt: 22/22 sending and 22/22 writing operations returned OKAY, exclusively targeting the 22 allowlisted slot A firmware partitions using verified slot B full-partition backups. No ROM partition flash in this procedure. Readback and boot not yet verified. Next boot recovery on current slot B without changing slots, compare full hashes of both firmware slots to saved B backup inventory, then retry V9 on A only if verified. Experimental procedure; successful fastboot writes do not establish boot compatibility. No source changes.
