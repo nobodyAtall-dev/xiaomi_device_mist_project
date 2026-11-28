@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inventory stock images independently of Dumpyara, with explicit coverage."""
-import csv, hashlib, json, os, re, shutil, stat, subprocess, sys, tempfile
+import csv, hashlib, json, os, re, shutil, stat, struct, subprocess, sys, tempfile
 from pathlib import Path
 base=Path(sys.argv[1]).resolve()
 report=base/'reports'; report.mkdir(exist_ok=True)
@@ -39,15 +39,55 @@ def decode(p,label,depth=0):
             status='sparse' if rc==0 else 'failed'
             if not rc:decode(raw,label+'!raw',depth+1)
         elif lp==b'gDla':
-            status='super';rc=run(['lpdump',p],'decode.log')
-            out=dest/'logical';out.mkdir()
-            rc2=run(['lpunpack',p,out],'decode.log');rc=rc or rc2
-            for q in sorted(out.glob('*.img')):decode(q,label+'!'+q.name,depth+1)
-            if not list(out.glob('*.img')):rc=1
-        elif ero==bytes.fromhex('e2e1f5e0') or ext==b'\\x53\\xef' or 'FAT' in typ or 'F2FS' in typ or 'Squashfs' in typ:
+            status='super'
+            # Read every primary metadata slot and unpack nonempty linear/zero extents.
+            # Fastboot super is a single physical block device; reject other layouts.
+            with p.open('rb') as f:
+                f.seek(4096);g=f.read(52)
+                maxsize,slots,block=struct.unpack_from('<III',g,40)
+                if not (0<slots<=8 and 128<=maxsize<=16*1024*1024):raise ValueError('bad LP geometry')
+                for slot in range(slots):
+                    off=12288+slot*maxsize
+                    f.seek(off);h=f.read(128)
+                    if struct.unpack_from('<I',h)[0]!=0x414c5030:raise ValueError('bad LP metadata slot '+str(slot))
+                    major,minor,hs=struct.unpack_from('<HHI',h,4);ts=struct.unpack_from('<I',h,44)[0]
+                    if hs<128 or hs+ts>maxsize:raise ValueError('bad LP table size')
+                    desc=[struct.unpack_from('<III',h,80+i*12) for i in range(4)]
+                    f.seek(off+hs);data=f.read(ts)
+                    def entries(i):
+                        o,n,e=desc[i]
+                        if not e or o+n*e>len(data):raise ValueError('bad LP table')
+                        return [data[o+j*e:o+(j+1)*e] for j in range(n)]
+                    ex=[struct.unpack_from('<QIQI',x) for x in entries(1)]
+                    if len(entries(3))!=1:raise ValueError('multiple LP block devices unsupported')
+                    meta=[]
+                    for x in entries(0):
+                        name=x[:36].split(b'\\0',1)[0].decode()
+                        if not re.fullmatch(r'[A-Za-z0-9_.-]+',name):raise ValueError('bad partition name')
+                        attr,first,n,group=struct.unpack_from('<IIII',x,36)
+                        if first+n>len(ex):raise ValueError('invalid extent range')
+                        size=sum(e[0]*512 for e in ex[first:first+n])
+                        meta.append({'name':name,'bytes':size,'extents':ex[first:first+n]})
+                        if not size:continue
+                        q=dest/(str(slot)+'-'+name+'.img')
+                        with q.open('wb') as out:
+                            for sectors,typ,target,source in ex[first:first+n]:
+                                remaining=sectors*512
+                                if typ==1:out.seek(remaining,1);continue
+                                if typ!=0 or source!=0 or target*512+remaining>p.stat().st_size:raise ValueError('unsupported LP extent')
+                                f.seek(target*512)
+                                while remaining:
+                                    b=f.read(min(remaining,8*1024*1024))
+                                    if not b:raise EOFError('short LP read')
+                                    out.write(b);remaining-=len(b)
+                            out.truncate(size)
+                        decode(q,label+'!slot'+str(slot)+'/'+name+'.img',depth+1)
+                        q.unlink()
+                    (report/(dest.name+'-lp-slot'+str(slot)+'.json')).write_text(json.dumps(meta,indent=2))
+        elif ero==bytes.fromhex('e2e1f5e0') or ext==bytes.fromhex('53ef') or 'FAT' in typ or 'F2FS' in typ or 'Squashfs' in typ:
             # Mount read-only without journal replay; report original metadata.
             out=dest/'fs';out.mkdir()
-            fs='erofs' if ero==bytes.fromhex('e2e1f5e0') else 'ext4' if ext==b'\\x53\\xef' else 'vfat' if 'FAT' in typ else 'f2fs' if 'F2FS' in typ else 'squashfs'
+            fs='erofs' if ero==bytes.fromhex('e2e1f5e0') else 'ext4' if ext==bytes.fromhex('53ef') else 'vfat' if 'FAT' in typ else 'f2fs' if 'F2FS' in typ else 'squashfs'
             opts='loop,ro,noload' if fs=='ext4' else 'loop,ro'
             rc=run(['mount','-t',fs,'-o',opts,p,out],'decode.log')
             if not rc:
