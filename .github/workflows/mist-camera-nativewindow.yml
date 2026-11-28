@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
       - name: Prepare verified patching tools and private checkout
         env:
-          GH_${{ secrets.GH_PAT }}: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
           sudo apt-get -o Acquire::Retries=3 update
@@ -79,7 +79,7 @@ jobs:
           git -C work/vendor diff --stat
       - name: Publish verified binary changes
         env:
-          GH_${{ secrets.GH_PAT }}: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
           cd work/vendor
