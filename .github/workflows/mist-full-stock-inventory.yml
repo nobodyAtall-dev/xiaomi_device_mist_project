@@ -37,6 +37,21 @@ jobs:
           echo "$RUNNER_TEMP/mist-venv/bin" >> "$GITHUB_PATH"
           mkdir -p "$RUNNER_TEMP/mist-full-${{ matrix.firmware }}"
           df -h "$RUNNER_TEMP"
+      - name: Preflight inventory script before large downloads
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile scripts/mist-full-stock-inventory.py scripts/mist-full-stock-compare.py scripts/discover-mist-ota.py
+          TEST_DIR=$(mktemp -d)
+          mkdir -p "$TEST_DIR/stock/images"
+          printf 'test image' > "$TEST_DIR/stock/images/sample.img"
+          python3 scripts/mist-full-stock-inventory.py "$TEST_DIR"
+          python3 - "$TEST_DIR" <<'PY'
+          import json,sys
+          from pathlib import Path
+          result=json.loads((Path(sys.argv[1])/'reports/summary.json').read_text())
+          assert result['images']==1 and result['errors']==0, result
+          PY
+          rm -rf "$TEST_DIR"
       - name: Discover and download HyperOS 3 fastboot
         if: matrix.firmware == 'hyperos3'
         run: |
@@ -131,7 +146,7 @@ jobs:
           git clone --depth=1 -b lineage-24.0 https://github.com/LineageOS/android_external_avb.git avb
           git -C mkbootimg rev-parse HEAD > reports/mkbootimg-commit.txt
           git -C avb rev-parse HEAD > reports/avb-commit.txt
-          sudo python3 "$GITHUB_WORKSPACE/scripts/mist-full-stock-inventory.py" "$PWD"
+          sudo python3 -u "$GITHUB_WORKSPACE/scripts/mist-full-stock-inventory.py" "$PWD"
       - name: Upload complete inventories and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -140,6 +155,7 @@ jobs:
           path: ${{ runner.temp }}/mist-full-${{ matrix.firmware }}/reports/
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
   compare:
     if: ${{ needs.analyze.result == 'success' }}
     needs: analyze
