@@ -1,0 +1,266 @@
+name: Mist Phase 5 - Stock ELF reference collection
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label (self-hosted recommended with 150 GB free)
+        default: ubuntu-24.04
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: mist-bringup
+  cancel-in-progress: false
+jobs:
+  analyze:
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [hyperos3, hyperos4]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialize audit workspace
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d "$RUNNER_TEMP/mist-stock-elf-XXXXXX")
+          mkdir -p "$work/reports"
+          echo "MIST_WORK=$work" >> "$GITHUB_ENV"
+          df -h "$RUNNER_TEMP" > "$work/reports/disk-space.txt"
+      - name: Install extraction tools
+        run: |
+          set -euo pipefail
+          # Use Ubuntu's signed repositories only; Microsoft feeds are unrelated.
+          apt_opts=(-o Acquire::Retries=3)
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            apt_opts+=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+          elif [ -f /etc/apt/sources.list ]; then
+            apt_opts+=(-o Dir::Etc::sourcelist=/etc/apt/sources.list -o Dir::Etc::sourceparts=-)
+          else
+            echo "No Ubuntu APT source file found" | tee "$MIST_WORK/reports/install.log"
+            exit 1
+          fi
+          {
+            sudo apt-get "${apt_opts[@]}" update
+            sudo apt-get "${apt_opts[@]}" install -y aria2 python3-venv erofs-utils p7zip-full android-sdk-libsparse-utils e2fsprogs file git binutils binutils-aarch64-linux-gnu cpio lz4 device-tree-compiler kmod unzip mtools gzip xz-utils zstd
+            python3 -m venv "$MIST_WORK/venv"
+            "$MIST_WORK/venv/bin/pip" install dumpyara==1.1.0 requests beautifulsoup4 pyelftools
+          } 2>&1 | tee "$MIST_WORK/reports/install.log"
+          echo "$MIST_WORK/venv/bin" >> "$GITHUB_PATH"
+      - name: Discover and download HyperOS 3 fastboot
+        if: matrix.firmware == 'hyperos3'
+        run: |
+          set -euxo pipefail
+          cd "$MIST_WORK"
+          mkdir -p reports
+          echo 'Firmware discovery started' > reports/discovery-status.txt
+          python - <<'PY'
+          import re,requests,html,json,concurrent.futures
+          from pathlib import Path
+          from urllib.parse import urlparse
+          pattern=re.compile(r'mist_global_images_(OS3\.\d+\.\d+\.\d+\.[A-Z]{3}MIXM)_\d{8}\.\d+\.\d+_16\.0_global_[a-f0-9]+\.tgz',re.I)
+          pages=['https://droidforge.net/xiaomi/redmi-note-17-5g-mist?lang=en','https://mifw.net/devices/mist','https://mifw.net/devices/mist?page=1','https://xiaomifirmwareupdater.com/archive/miui/mist/','https://mirom.ezbox.idv.tw/en/phone/mist/','https://upmiui.com/?page=40','https://xiaomihive.com/firmware/mist/']
+          known='mist_global_images_OS3.0.304.0.WPUMIXM_20260917.0000.00_16.0_global_c4450c4e16.tgz'
+          hosts=['bn.d.miui.com','bigota.d.miui.com','hugeota.d.miui.com','cdnorg.d.miui.com','ultimateota.d.miui.com']
+          def get(page):
+              try:
+                  r=requests.get(page,timeout=35,headers={'User-Agent':'Mozilla/5.0'});r.raise_for_status()
+                  return page,html.unescape(r.text).replace('\\/','/'),None
+              except Exception as e: return page,'',str(e)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool: results=list(pool.map(get,pages))
+          names={known}
+          for page,body,error in results:
+              names.update(m.group(0) for m in pattern.finditer(body))
+          def ver(n): return tuple(map(int,pattern.fullmatch(n).group(1).removeprefix('OS').split('.')[:4]))
+          assert ver(known)==(3,0,304,0), 'Version parser regression'
+          names=[known]  # Pin the previously reviewed OS3.0.304.0 package.
+          print('Discovered candidates:', names, flush=True)
+          report={'sources':[{'page':p,'error':e,'matches':sorted(set(m.group(0) for m in pattern.finditer(b)))} for p,b,e in results],'candidates':names,'probes':[]}
+          out=Path('reports/firmware-source.json')
+          out.write_text(json.dumps(report,indent=2))
+          for name in names:
+              version=pattern.fullmatch(name).group(1)
+              for host in hosts:
+                  url=f'https://{host}/{version}/{name}'
+                  try:
+                      with requests.get(url,headers={'Range':'bytes=0-15','Accept-Encoding':'identity'},stream=True,timeout=20) as r:
+                          ok=r.status_code in (200,206) and r.raw.read(2)==b'\x1f\x8b'
+                          report['probes'].append({'url':url,'status':r.status_code,'gzip':ok})
+                      if ok:
+                          report['selected']=url
+                          out.write_text(json.dumps(report,indent=2))
+                          Path('rom-url.txt').write_text(url)
+                          print('Selected:',url)
+                          raise SystemExit(0)
+                  except requests.RequestException as e: report['probes'].append({'url':url,'error':str(e)})
+                  finally: out.write_text(json.dumps(report,indent=2))
+          raise SystemExit('No reachable matching fastboot package; see firmware-source.json')
+          PY
+          cat reports/firmware-source.json
+          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.tgz "$(cat rom-url.txt)"
+          sha256sum stock.tgz > reports/archive.sha256
+          md5sum stock.tgz > reports/archive.md5
+          tar -tzf stock.tgz > reports/archive-files.txt
+          mkdir stock
+          tar -xzf stock.tgz -C stock --no-same-owner --no-same-permissions
+      - name: Discover and download HyperOS 4 full OTA
+        if: matrix.firmware == 'hyperos4'
+        run: |
+          set -euo pipefail
+          cd "$MIST_WORK"
+          mkdir -p reports stock/images
+          python - <<'PY'
+          import json, requests
+          from pathlib import Path
+          name='mist_global-ota_full-OS4.0.8.0.XPUMIXM-user-17.0-3695aedf1f.zip'
+          version='OS4.0.8.0.XPUMIXM'
+          report={'md5':'3695aedf1f96d96bbdac41bb247bc8bf','probes':[]}
+          out=Path('reports/firmware-source.json')
+          for host in ('bn.d.miui.com','bigota.d.miui.com','hugeota.d.miui.com','cdnorg.d.miui.com','ultimateota.d.miui.com'):
+              url=f'https://{host}/{version}/{name}'
+              try:
+                  with requests.get(url,headers={'Range':'bytes=0-15','Accept-Encoding':'identity'},stream=True,timeout=25) as r:
+                      ok=r.status_code in (200,206) and r.raw.read(4)==b'PK\x03\x04'
+                      report['probes'].append({'url':url,'status':r.status_code,'zip':ok})
+                  if ok:
+                      report['selected']=url
+                      Path('rom-url.txt').write_text(url)
+                      break
+              except requests.RequestException as e:
+                  report['probes'].append({'url':url,'error':str(e)})
+          out.write_text(json.dumps(report,indent=2))
+          if 'selected' not in report:
+              raise SystemExit('Pinned HyperOS 4 OTA unreachable')
+          PY
+          aria2c -x16 -s16 -k1M --max-tries=10 --retry-wait=5 --continue=true --auto-file-renaming=false -o stock.zip "$(cat rom-url.txt)"
+          sha256sum stock.zip > reports/archive.sha256
+          md5sum stock.zip > reports/archive.md5
+          python - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          p=Path('stock.zip')
+          expected='3695aedf1f96d96bbdac41bb247bc8bf'
+          if expected:
+              with p.open('rb') as f: actual=hashlib.file_digest(f,'md5').hexdigest()
+              assert actual==expected, 'OTA MD5 mismatch'
+          with zipfile.ZipFile(p) as z:
+              assert 'payload.bin' in z.namelist(), 'No payload.bin'
+              Path('reports/archive-files.txt').write_text('\n'.join(z.namelist()))
+              for n in ('META-INF/com/android/metadata','payload_properties.txt'):
+                  if n in z.namelist(): Path('reports/'+n.rsplit('/',1)[-1]).write_bytes(z.read(n))
+              assert 'pre-device=mist' in Path('reports/metadata').read_text(), 'Wrong OTA device'
+          PY
+          # Retain payload images for boot/AVB analysis using Dumpyara debug mode.
+          python -m dumpyara stock.zip -o "$PWD/dump" -v -d 2>&1 | tee reports/extraction.log
+          if [ -d dump/temp_raw_images ]; then
+            for img in "$PWD"/dump/temp_raw_images/*.img; do
+              [ -f "$img" ] || continue
+              ln -s "$img" "stock/images/$(basename "$img")"
+            done
+          fi
+          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
+      - name: Extract partitions and inventory
+        if: matrix.firmware == 'hyperos3'
+        run: |
+          set -euxo pipefail
+          cd "$MIST_WORK"
+          find stock -type f -print0 | xargs -0 -r sha256sum > reports/stock-files.sha256
+          find stock -type f -print0 | xargs -0 -r file > reports/stock-file-types.txt
+          python -m dumpyara stock.tgz -o "$PWD/dump" -v 2>&1 | tee reports/extraction.log
+          find dump -printf '%y %s %p -> %l\n' > reports/extracted-files.txt
+          find dump -type f \( -name '*.prop' -o -name 'fstab*' -o -name '*.rc' -o -name '*manifest*.xml' -o -name '*compatibility_matrix*.xml' -o -name 'modules.load*' \) -print0 | while IFS= read -r -d '' p; do
+            printf '\n===== %s =====\n' "$p"
+            cat "$p"
+          done > reports/configuration.txt
+          find dump -type f -name '*.ko' > reports/kernel-modules.txt
+          find dump -type f -name '*.so' > reports/shared-libraries.txt
+          find stock -type f \( -name '*.xml' -o -name '*.txt' \) -print0 | while IFS= read -r -d '' p; do
+            printf '\n===== %s =====\n' "$p"; cat "$p"
+          done > reports/flash-metadata.txt
+
+      - name: Collect exact stock ELF binaries and diagnostics
+        run: |
+          set -euo pipefail
+          cd "$MIST_WORK"
+          python - <<'PY'
+          import hashlib, json, shutil, subprocess
+          from pathlib import Path
+          root=Path('dump')
+          out=Path('reference')
+          paths=[
+              'vendor/lib64/hw/anc.hal.so',
+              'vendor/lib64/libarcsoft_beautyshot.so',
+              'vendor/lib64/libMiPhotoFilter.so',
+              'vendor/lib64/libion.so',
+              'vendor/lib64/libdmabufheap.so',
+              'system/lib64/libion.so',
+              'system/lib64/libnativewindow.so',
+              'system/lib64/libdmabufheap.so',
+          ]
+          manifest=[]
+          for name in paths:
+              p=Path(name)
+              candidates=[root/p, root/p.parts[0]/p]
+              src=next((x for x in candidates if x.is_file()),None)
+              if src is None:
+                  manifest.append({'path':name,'status':'missing'})
+                  if name != 'system/lib64/libdmabufheap.so':
+                      raise SystemExit(f'Required stock file missing: {name}')
+                  continue
+              assert src.resolve().is_relative_to(root.resolve()), name
+              assert src.open('rb').read(4)==b'\x7fELF', name
+              dest=out/'blobs'/p
+              dest.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copyfile(src,dest)
+              assert dest.stat().st_size < 100*1024*1024, name
+              with dest.open('rb') as f:
+                  sha=hashlib.file_digest(f,'sha256').hexdigest()
+              manifest.append({'path':name,'sha256':sha,'bytes':dest.stat().st_size})
+              report=out/'reports'/Path(name+'.txt')
+              report.parent.mkdir(parents=True,exist_ok=True)
+              with report.open('w') as f:
+                  subprocess.run(['readelf','-h','-d','--dyn-syms','--wide','--version-info',str(dest)],stdout=f,check=True)
+                  if p.name in ('libion.so','libdmabufheap.so','anc.hal.so'):
+                      subprocess.run(['aarch64-linux-gnu-objdump','-d','--disassemble=ion_close',str(dest)],stdout=f,check=True)
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          for name in ('firmware-source.json','archive.sha256','archive.md5'):
+              shutil.copyfile(Path('reports')/name,out/name)
+          print(json.dumps(manifest,indent=2))
+          PY
+      - name: Publish original stock references to isolated private branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          FIRMWARE: ${{ matrix.firmware }}
+        run: |
+          set -euo pipefail
+          repo=nobodyAtall-dev/android_vendor_xiaomi_mist
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          branch="stock-elf-$FIRMWARE"
+          cd "$MIST_WORK/reference"
+          git init -b "$branch"
+          git config user.name nobodyAtall-dev
+          git config user.email 'nobodyAtall-dev@users.noreply.github.com'
+          git remote add origin "https://github.com/$repo.git"
+          git config credential.helper '!gh auth git-credential'
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            git fetch --depth=1 origin "$branch"
+            git reset --soft FETCH_HEAD
+          fi
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Archive pinned Mist $FIRMWARE stock ELF references"
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+          git rev-parse HEAD
+      - name: Remove temporary firmware and reference checkout
+        if: always()
+        run: |
+          if [[ "$MIST_WORK" == "$RUNNER_TEMP"/mist-stock-elf-* ]]; then
+            rm -rf -- "$MIST_WORK"
+          fi
